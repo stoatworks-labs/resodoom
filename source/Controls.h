@@ -2,6 +2,13 @@
 
 #include <stagehand/Present.h>
 
+#include <FFGLSDK.h>
+
+// After FFGLSDK.h, which is where FFUInt32 comes from. An include above the
+// SDK's fails with four "unknown type name" errors pointing here rather than
+// at the include order.
+#include "StoatworksAboutParams.h"
+
 #include <cmath>
 
 /**
@@ -52,7 +59,17 @@ enum ParamId : unsigned
 	PT_CONFIRM,
 	PT_AUTOMAP,
 
-	PT_COUNT
+	/*
+		The Stoatworks About block: one text line and one button per link.
+
+		Last in the enum so that adding a link later -- which is what happens
+		when a project gains a user guide -- shifts nothing a saved composition
+		already refers to. How many buttons there are is decided by which URLs
+		StoatworksAbout.h actually holds, so the count comes from there rather
+		than being written out here.
+	*/
+	PT_ABOUT_FIRST,
+	PT_COUNT = PT_ABOUT_FIRST + stoatworks::about::kParamCount
 };
 
 constexpr unsigned kFirstButton = PT_FORWARD;

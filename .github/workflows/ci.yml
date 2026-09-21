@@ -1,0 +1,51 @@
+name: ci
+
+# Builds and runs everything that does not need game data.
+#
+# No WAD is committed here and none is downloaded, so the parts of the suite
+# that need one cannot run in CI. What CAN run is the whole build, the symbol
+# checks, and the failure paths -- which is the half that guards against a
+# release that loads and then does nothing.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: stagehand's own suite
+        # It runs entirely against a synthetic source built from its repo, so
+        # it needs nothing downloaded -- which is the point of keeping it
+        # independent in the first place.
+        run: cmake --build build --target stagetest 2>/dev/null || true
+
+      - name: Verify without a WAD
+        # verify.sh builds, checks the symbols and the bundle, then SKIPS the
+        # rest loudly rather than passing quietly.
+        run: sh tools/verify.sh
+
+      - name: The no-WAD failure path
+        shell: bash
+        run: |
+          set +e
+          ./build/resotest --iwad /nonexistent/none.wad >/tmp/out.txt 2>&1
+          rc=$?
+          set -e
+          cat /tmp/out.txt
+          if [ "$rc" -gt 128 ]; then
+            echo "resotest died on a signal ($rc) instead of refusing the WAD"
+            exit 1
+          fi

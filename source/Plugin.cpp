@@ -140,6 +140,26 @@ ResodoomPlugin::ResodoomPlugin()
 		SetParamInfo( p, ButtonName( p ), FF_TYPE_BOOLEAN, false );
 		SetParamGroup( p, "Controls" );
 	}
+
+	/*
+		The About block. Declared inline rather than through a helper, because
+		SetParamInfo is protected on CFFGLPlugin and nothing outside the class
+		can call it.
+
+		The licence shown here is GPL-2.0, which is not what the rest of the
+		fleet says -- see AGENTS.md. It comes from the website's data through
+		StoatworksAbout.h, so it cannot drift from the repo's actual licence
+		without somebody changing the one place it is written down.
+	*/
+	SetParamInfo( PT_ABOUT_FIRST, "About", FF_TYPE_TEXT,
+				  stoatworks::about::defaultText() );
+	{
+		FFUInt32 aboutId = PT_ABOUT_FIRST + 1;
+		for( const auto& b : stoatworks::about::buttons() )
+			SetParamInfo( aboutId++, b.label, FF_TYPE_EVENT, false );
+	}
+	for( unsigned id = PT_ABOUT_FIRST; id < PT_COUNT; ++id )
+		SetParamGroup( id, "About" );
 }
 
 ResodoomPlugin::~ResodoomPlugin()
@@ -352,6 +372,10 @@ FFResult ResodoomPlugin::SetFloatParameter( unsigned int index, float value )
 	if( index >= PT_COUNT )
 		return FF_FAIL;
 
+	if( index >= PT_ABOUT_FIRST )
+		return stoatworks::about::handleParam( index - PT_ABOUT_FIRST, value ) ? FF_SUCCESS
+																			   : FF_FAIL;
+
 	mParams[ index ] = value;
 
 	switch( index )
@@ -399,6 +423,16 @@ FFResult ResodoomPlugin::SetTextParameter( unsigned int index, const char* value
 		kills the plugin during a host's instantiate sweep -- the whole bundle
 		then reports as broken, for a reason that has nothing to do with Doom.
 	*/
+	/*
+		LOAD-BEARING, and its absence is invisible offline: instantiateGL
+		pushes every declared default back through the setters and deletes the
+		instance the moment one returns FF_FAIL. Omit the About case and the
+		plugin cannot be created in any real host while every in-repo harness
+		still passes.
+	*/
+	if( index == PT_ABOUT_FIRST )
+		return FF_SUCCESS;
+
 	switch( index )
 	{
 		case PT_IWAD:
@@ -426,6 +460,14 @@ FFResult ResodoomPlugin::SetTextParameter( unsigned int index, const char* value
 
 char* ResodoomPlugin::GetTextParameter( unsigned int index )
 {
+	if( index == PT_ABOUT_FIRST )
+	{
+		// The returned buffer must outlive the call, and a temporary
+		// std::string's is gone before the host reads it.
+		static const std::string line = stoatworks::about::textParam( 0 );
+		return const_cast< char* >( line.c_str() );
+	}
+
 	switch( index )
 	{
 		case PT_IWAD: return const_cast< char* >( mIwad.c_str() );

@@ -1,0 +1,164 @@
+name: release
+
+# Builds the macOS universal Resodoom.bundle and publishes it.
+#
+# **macOS only, on purpose.** The Windows and Linux branches compile in
+# principle and have never been built or run, and an untested binary of a thing
+# that hosts a game engine is worse than no binary: it would be downloaded, it
+# would fail in some way nobody here can reproduce, and the bug report would
+# arrive against a platform with no test rig behind it. When somebody can
+# actually run one, this gets a matrix.
+#
+# Trigger manually (Actions > release > Run workflow) or by pushing a v* tag.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: macos-universal
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Derive version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The engine runs with no WAD, so CI can prove the whole load path works
+      # without shipping or downloading any game data: the harness asserts that
+      # a missing WAD is refused with a message rather than crashing, which is
+      # the failure an operator is most likely to meet.
+      - name: Smoke test (no WAD required)
+        shell: bash
+        run: |
+          ./build/resotest --iwad /nonexistent/none.wad 2>&1 | tail -3 || true
+          # A refusal is the expected outcome; a crash is not.
+          set +e
+          ./build/resotest --iwad /nonexistent/none.wad >/dev/null 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -gt 128 ]; then
+            echo "resotest died on a signal ($rc) instead of refusing the WAD"
+            exit 1
+          fi
+          echo "refused cleanly with exit $rc"
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p out
+          cp -R "build/Resodoom.bundle" "out/Resodoom.bundle"
+
+          # Actions runs `shell: bash` as `bash -eo pipefail`, so `cmd | grep -q X`
+          # FAILS when grep FINDS its match: grep exits at once, the writer takes
+          # SIGPIPE, and pipefail reports the pipeline as failed -- failing the
+          # release on a correct binary. Captured and matched with `case` instead.
+          __archs=$( lipo -archs "out/Resodoom.bundle/Contents/MacOS/Resodoom" )
+          echo "plugin archs: $__archs"
+          case "$__archs" in
+            *arm64*) ;;
+            *) echo "expected arm64, got: $__archs"; exit 1 ;;
+          esac
+          case "$__archs" in
+            *x86_64*) ;;
+            *) echo "expected x86_64, got: $__archs"; exit 1 ;;
+          esac
+
+          # The engine is a separate library staged inside the bundle, and it
+          # has to be universal too -- a thin engine beside a universal plugin
+          # loads on one Mac and refuses every WAD on the other.
+          __engine="out/Resodoom.bundle/Contents/MacOS/libresodoom_engine.dylib"
+          test -f "$__engine" || { echo "the engine is not in the bundle"; exit 1; }
+          __earchs=$( lipo -archs "$__engine" )
+          echo "engine archs: $__earchs"
+          case "$__earchs" in
+            *arm64*x86_64*|*x86_64*arm64*) ;;
+            *) echo "the engine is not universal: $__earchs"; exit 1 ;;
+          esac
+
+          # The registration lives in a file-scope constructor nothing names, so
+          # a linker that dropped the translation unit would still produce a
+          # loadable bundle that reports it contains no plugins.
+          __symbols=$( nm -gU "out/Resodoom.bundle/Contents/MacOS/Resodoom" )
+          case "$__symbols" in
+            *_plugMain*) ;;
+            *) echo "expected _plugMain"; exit 1 ;;
+          esac
+
+          # The engine exports exactly one symbol. doomgeneric has several
+          # hundred file-scope globals and none of them belong in the host's
+          # namespace.
+          __esyms=$( nm -gU "$__engine" )
+          case "$__esyms" in
+            *stagehand_source_api*) ;;
+            *) echo "the engine has no stagehand entry point"; exit 1 ;;
+          esac
+
+          # GPL-2.0, and the licence has to travel with the binary.
+          cp LICENSE out/LICENSE
+          cp README.md out/ 2>/dev/null || true
+          cp docs/USER-GUIDE.md out/ 2>/dev/null || true
+          ls -R out
+
+      - name: Archive (zip)
+        shell: bash
+        run: |
+          cd out
+          zip -r "../resodoom-macos-universal.zip" ./*
+
+      - name: Disk image
+        shell: bash
+        # A .dmg, but deliberately NOT a .pkg. An FFGL plugin's destination is
+        # per-user and edition-specific -- the README installs to
+        # ~/Documents/Resolume {Arena,Avenue}/Extra Effects -- so a .pkg would
+        # have to guess a path and would silently install to the wrong one for
+        # half of users.
+        run: |
+          source scripts/release-lib.sh
+          rl_init "Resodoom" resodoom "${{ steps.ver.outputs.version }}" \
+            com.stoatworks.ffgl.resodoom "$GITHUB_WORKSPACE"
+          rl_adhoc_sign "out/Resodoom.bundle"
+          rl_dmg "macos-universal" out
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: resodoom-macos-universal
+          path: |
+            *.zip
+            *.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
