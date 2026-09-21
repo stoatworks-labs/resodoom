@@ -410,6 +410,21 @@ FFResult ResodoomPlugin::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 	const float speed = mParams[ PT_RUN ] >= 0.5f ? SpeedFromParam( mParams[ PT_SPEED ] ) : 0.0f;
 	mEngine.Pump( speed );
 
+	/*
+		Doom can fail after a successful start, and usually does when it fails
+		at all: Load() only reports that the engine thread came up, and the WAD
+		is found, read and rejected on that thread a moment later. Without this
+		the log says "engine thread up" and then goes quiet, and the operator
+		has a black layer with no entry naming the cause.
+
+		Latching also stops the engine being rebuilt sixty times a second.
+	*/
+	if( !mLoadFailed && mEngine.Failed() )
+	{
+		mLoadFailed = true;
+		diag::error( "the engine gave up after starting: " + mEngine.EngineStatus() );
+	}
+
 	if( !UpdateTexture() )
 	{
 		/*

@@ -215,7 +215,8 @@ bool Engine::Load( const ResodoomConfig& cfg )
 	mLastPumpNs   = nowNanoseconds();
 	mTicRemainder = 0.0;
 	mStatus       = "running";
-	diag::info( std::string( "started on " ) + ( cfg.iwad ? cfg.iwad : "?" ) );
+	diag::info( std::string( "engine thread up on " ) + ( cfg.iwad ? cfg.iwad : "?" )
+				+ " -- Doom loads the WAD on that thread, so watch for a failure after this" );
 	return true;
 }
 
@@ -247,6 +248,19 @@ void Engine::Unload()
 bool Engine::Running() const
 {
 	return mApi != nullptr && mApi->State() == RESODOOM_RUNNING;
+}
+
+bool Engine::Failed() const
+{
+	return mApi != nullptr && mApi->State() == RESODOOM_FAILED;
+}
+
+std::string Engine::EngineStatus() const
+{
+	if( !mApi )
+		return {};
+	const char* s = mApi->Status();
+	return s ? s : "";
 }
 
 void Engine::Pump( float speed )

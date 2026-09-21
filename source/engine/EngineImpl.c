@@ -303,8 +303,15 @@ void resodoom_hook_exit( int code )
 		own -- the plugin's diagnostics log carries the engine's stderr, which
 		is where the actual "W_GetNumForName: ... not found" line appears.
 	*/
-	if( g.status[ 0 ] == '\0' )
-		set_status( "the engine stopped itself (exit code %d) -- see the log for its own message", code );
+	/*
+		Overwrite whatever was there. The previous status is "starting", which
+		is a placeholder, and there is no way to reach into I_Error's stack for
+		the text it just printed -- so the honest thing is to say where the
+		real message went rather than to report a stale one.
+	*/
+	set_status( "Doom stopped itself (exit code %d). Its own message is in the log, "
+				"just above this line -- it usually names the WAD",
+				code );
 
 	atomic_store( &g.state, RESODOOM_FAILED );
 	longjmp( g.escape, 1 );

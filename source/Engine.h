@@ -40,8 +40,23 @@ public:
 
 	void Unload();
 
-	bool  Running() const;
-	/// Never empty once anything has been attempted.
+	bool Running() const;
+
+	/*
+		True once Doom has given up on its own.
+
+		Start() only reports whether the engine THREAD came up. Doom does its
+		real work -- finding the WAD, reading it, deciding it is malformed --
+		on that thread, a moment later, so a bad WAD is a success followed by a
+		failure rather than a failed call. Nothing notices unless someone asks.
+	*/
+	bool Failed() const;
+
+	/// The engine's own account of itself, which after a failure is Doom's.
+	/// Empty if no engine is loaded.
+	std::string EngineStatus() const;
+
+	/// The host side's own status. Never empty once anything has been attempted.
 	const std::string& Status() const { return mStatus; }
 
 	/*
