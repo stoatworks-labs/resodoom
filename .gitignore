@@ -11,3 +11,6 @@ wads/
 *.WAD
 *.pk3
 *.deh
+build-verify/
+build-universal/
+*.log
