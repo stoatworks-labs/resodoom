@@ -25,6 +25,28 @@ what you want from a layer nobody is holding a controller for.
 
 ---
 
+<!-- downloads:start -->
+
+## Download
+
+**[v0.1.0](https://github.com/stoatworks-labs/resodoom/releases/tag/v0.1.0)** — prebuilt for macOS. Pick your platform:
+
+<details>
+<summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`resodoom-0.1.0-macos-universal.dmg`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.1.0/resodoom-0.1.0-macos-universal.dmg) | 751 KB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`resodoom-macos-universal.zip`](https://github.com/stoatworks-labs/resodoom/releases/latest/download/resodoom-macos-universal.zip) | 693 KB |
+
+</details>
+
+All builds, checksums and release notes: [github.com/stoatworks-labs/resodoom/releases](https://github.com/stoatworks-labs/resodoom/releases).
+
+macOS builds are signed and notarised by Apple, so they open normally — no Gatekeeper warning and no quarantine step.
+
+<!-- downloads:end -->
+
 ## Building
 
 ```bash
