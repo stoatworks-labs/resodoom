@@ -98,6 +98,108 @@ if( APPLE )
 endif()
 
 # ---------------------------------------------------------------------------
+# The plugin
+# ---------------------------------------------------------------------------
+if( RESODOOM_BUILD_PLUGIN AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/ffgl/CMakeLists.txt )
+	set( FFGL_BUILD_EXAMPLE_PLUGINS OFF CACHE BOOL "" FORCE )
+	add_subdirectory( external/ffgl EXCLUDE_FROM_ALL )
+
+	# An OBJECT library so the GL harness links the same objects the bundle
+	# does -- the harness has to drive the real class, not a copy of it.
+	#
+	# Note what is NOT in here: SourcePlugin.cpp. That file carries the
+	# CFFGLPluginInfo registration and is listed directly in the MODULE target
+	# below; in a STATIC archive the linker is entitled to drop it, giving a
+	# bundle that loads, exports plugMain and reports no plugins.
+	add_library( resodoom_plugin OBJECT
+		source/Plugin.h
+		source/Plugin.cpp
+		source/Controls.h
+		source/Engine.h
+		source/Engine.cpp
+		source/Diag.h
+		source/Diag.cpp
+	)
+	target_include_directories( resodoom_plugin PUBLIC source )
+	target_link_libraries( resodoom_plugin PUBLIC ffgl::sdk ${CMAKE_DL_LIBS} )
+	set_target_properties( resodoom_plugin PROPERTIES POSITION_INDEPENDENT_CODE ON )
+
+	if( NOT APPLE )
+		find_package( GLEW REQUIRED )
+		target_link_libraries( resodoom_plugin PUBLIC GLEW::GLEW )
+	endif()
+
+	add_library( ResodoomSource MODULE source/SourcePlugin.cpp )
+	target_link_libraries( ResodoomSource PRIVATE resodoom_plugin )
+
+	if( APPLE )
+		set_target_properties( ResodoomSource PROPERTIES
+			BUNDLE TRUE
+			BUNDLE_EXTENSION "bundle"
+			OUTPUT_NAME "Resodoom"
+			MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in"
+			MACOSX_BUNDLE_BUNDLE_NAME "Resodoom"
+			MACOSX_BUNDLE_GUI_IDENTIFIER "com.stoatworks.ffgl.resodoom"
+			MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+		)
+		# FFGL hosts resolve plugMain by symbol name, so keep default visibility.
+		target_link_libraries( ResodoomSource PRIVATE
+			"-framework OpenGL"
+			"-framework Carbon"
+			"-framework AppKit"
+		)
+	else()
+		set_target_properties( ResodoomSource PROPERTIES OUTPUT_NAME "Resodoom" )
+	endif()
+
+	# The engine ships INSIDE the bundle, beside the plugin binary, which is
+	# where Engine::EngineLibraryPath looks first. A bundle without it loads
+	# fine and then refuses every WAD, so this is a build step rather than an
+	# install step -- a developer build has to be complete too.
+	if( APPLE )
+		set( RESODOOM_ENGINE_DEST "$<TARGET_BUNDLE_CONTENT_DIR:ResodoomSource>/MacOS" )
+	else()
+		set( RESODOOM_ENGINE_DEST "$<TARGET_FILE_DIR:ResodoomSource>" )
+	endif()
+
+	add_custom_command( TARGET ResodoomSource POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"$<TARGET_FILE:resodoom_engine>" "${RESODOOM_ENGINE_DEST}/"
+		COMMENT "Staging the engine into the bundle"
+	)
+	add_dependencies( ResodoomSource resodoom_engine )
+
+	# The GL harness: the real plugin class through the real FFGL sequence in a
+	# headless core-profile context. The only thing that catches a shader that
+	# will not compile or a uniform whose name does not match the GLSL.
+	if( RESODOOM_BUILD_TOOLS AND APPLE )
+		add_executable( resogl tools/resogl/main.cpp )
+		target_link_libraries( resogl PRIVATE resodoom_plugin
+			"-framework OpenGL"
+			"-framework AppKit"
+		)
+		add_dependencies( resogl resodoom_engine )
+		target_compile_definitions( resogl PRIVATE
+			RESODOOM_ENGINE_BUILD_PATH="$<TARGET_FILE:resodoom_engine>"
+		)
+	endif()
+
+	if( APPLE AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT )
+		set( CMAKE_INSTALL_PREFIX "$ENV{HOME}/Documents/Resolume Arena/Extra Effects"
+			 CACHE PATH "" FORCE )
+	endif()
+
+	install( TARGETS ResodoomSource
+		LIBRARY DESTINATION "."
+		BUNDLE  DESTINATION "."
+	)
+elseif( RESODOOM_BUILD_PLUGIN )
+	message( STATUS
+		"FFGL SDK not present -- skipping the plugin. "
+		"Run: git submodule update --init --recursive" )
+endif()
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 if( RESODOOM_BUILD_TOOLS )
