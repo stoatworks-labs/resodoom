@@ -29,18 +29,20 @@ std::string ResodoomPlugin::EngineLibraryPath()
 
 	std::error_code ec;
 
-	// Beside the plugin binary is where the build puts it, on every platform.
-	const std::string beside = dir + "/" + kEngineLeaf;
-	if( std::filesystem::exists( beside, ec ) )
-		return beside;
-
 	/*
-		A developer build runs the plugin straight out of the CMake build
-		directory, where the engine sits above the bundle's MacOS folder rather
-		than beside the binary. Looking there costs two stats and saves
-		installing on every rebuild.
+		In order:
+
+		1. Beside the binary -- the harnesses, and the Windows and Linux layout.
+		2. Contents/Frameworks -- where a shipped macOS bundle keeps it. Not
+		   Contents/MacOS: macOS signs inside-out and the fleet's signing pass
+		   skips that directory, so an engine there is never signed and signing
+		   the bundle fails naming it.
+		3. The CMake build tree, so a developer build runs without installing.
+		4. Contents/Resources, for a bundle built before the move.
 	*/
 	const std::string candidates[] = {
+		dir + "/" + kEngineLeaf,
+		dir + "/../Frameworks/" + kEngineLeaf,
 		dir + "/../../../" + kEngineLeaf,
 		dir + "/../Resources/" + kEngineLeaf,
 	};

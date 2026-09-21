@@ -87,7 +87,7 @@ jobs:
           # The engine is a separate library staged inside the bundle, and it
           # has to be universal too -- a thin engine beside a universal plugin
           # loads on one Mac and refuses every WAD on the other.
-          __engine="out/Resodoom.bundle/Contents/MacOS/libresodoom_engine.dylib"
+          __engine="out/Resodoom.bundle/Contents/Frameworks/libresodoom_engine.dylib"
           test -f "$__engine" || { echo "the engine is not in the bundle"; exit 1; }
           __earchs=$( lipo -archs "$__engine" )
           echo "engine archs: $__earchs"

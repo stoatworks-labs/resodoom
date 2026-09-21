@@ -168,17 +168,26 @@ if( RESODOOM_BUILD_PLUGIN AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/ffgl/C
 		set_target_properties( ResodoomSource PROPERTIES OUTPUT_NAME "Resodoom" )
 	endif()
 
-	# The engine ships INSIDE the bundle, beside the plugin binary, which is
-	# where Engine::EngineLibraryPath looks first. A bundle without it loads
-	# fine and then refuses every WAD, so this is a build step rather than an
-	# install step -- a developer build has to be complete too.
+	# The engine ships INSIDE the bundle. A bundle without it loads fine and
+	# then refuses every WAD, so this is a build step rather than an install
+	# step -- a developer build has to be complete too.
+	#
+	# **Contents/Frameworks, not Contents/MacOS**, and that is a signing
+	# requirement rather than a matter of taste. macOS signs inside-out: every
+	# nested binary must be signed before the container, and the fleet's
+	# release-lib deliberately EXCLUDES Contents/MacOS/* from its nested pass
+	# because in an ordinary .app that directory holds only the main executable.
+	# Putting the engine there means it is never signed, and signing the bundle
+	# then fails with "code object is not signed at all" naming the dylib.
+	# Frameworks is where macOS expects nested libraries anyway.
 	if( APPLE )
-		set( RESODOOM_ENGINE_DEST "$<TARGET_BUNDLE_CONTENT_DIR:ResodoomSource>/MacOS" )
+		set( RESODOOM_ENGINE_DEST "$<TARGET_BUNDLE_CONTENT_DIR:ResodoomSource>/Frameworks" )
 	else()
 		set( RESODOOM_ENGINE_DEST "$<TARGET_FILE_DIR:ResodoomSource>" )
 	endif()
 
 	add_custom_command( TARGET ResodoomSource POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${RESODOOM_ENGINE_DEST}"
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different
 			"$<TARGET_FILE:resodoom_engine>" "${RESODOOM_ENGINE_DEST}/"
 		COMMENT "Staging the engine into the bundle"

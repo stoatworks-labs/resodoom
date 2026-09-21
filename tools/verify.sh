@@ -66,9 +66,12 @@ if ! nm -gU "$BUILD/Resodoom.bundle/Contents/MacOS/Resodoom" 2>/dev/null \
 fi
 echo "ok"
 
-say "the engine is inside the bundle"
-# A bundle without it loads fine and then refuses every WAD.
-if [ ! -f "$BUILD/Resodoom.bundle/Contents/MacOS/libresodoom_engine.dylib" ]; then
+say "the engine is inside the bundle, where it can be signed"
+# A bundle without it loads fine and then refuses every WAD. It has to be in
+# Contents/Frameworks and not Contents/MacOS: macOS signs inside-out and the
+# fleet's signing pass skips MacOS/*, so an engine there is never signed and
+# signing the bundle fails naming it.
+if [ ! -f "$BUILD/Resodoom.bundle/Contents/Frameworks/libresodoom_engine.dylib" ]; then
     echo "FAIL: the engine was not staged into the bundle"
     exit 1
 fi
