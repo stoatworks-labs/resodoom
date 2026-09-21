@@ -2,7 +2,19 @@
 
 **What it is:** Doom running inside Resolume as an FFGL source. The game
 becomes a layer you can composite, key, MIDI-map and run through other effects.
-C++17 and C11, CMake, universal macOS `.bundle`. GPL-2.0.
+C++17 and C11, CMake, universal macOS `.bundle`. **GPL-2.0 — the one repo in
+the fleet that is not MIT.**
+
+**The non-Doom half lives elsewhere.**
+[stagehand](https://github.com/stoatworks-labs/stagehand) is an MIT library,
+consumed here as a submodule, holding everything that is not about Doom:
+loading a private copy of a source library, paying out its clock, the letterbox
+maths, the texture presentation and the log. This repo's engine implements
+stagehand's generic source ABI, so the boundary is compiled and tested rather
+than asserted.
+
+Code may move from here to stagehand only if it is genuinely Doom-free.
+Nothing may move the other way.
 
 `CLAUDE.md` is the command reference — build, install, verify. This file is the
 *why*: read it before touching the clock, the loading arrangement, or anything
@@ -62,11 +74,11 @@ and then nothing happens.
 blocking exactly where it would have idled, and the clock advances in the
 middle of `TryRunTics` where that loop expects it to.
 
-**A loaded copy of the engine can run Doom exactly once.** `Stop()` joins the
+**A loaded copy of the engine can run Doom exactly once.** `Close()` joins the
 thread and frees every allocation, but it cannot put doomgeneric's several
 hundred file-scope globals back: the wad list, the zone pointers, the game
 state machine and a long tail of "already initialised" flags all still describe
-the run that just ended, and most now point at freed memory. A second `Start`
+the run that just ended, and most now point at freed memory. A second `Open`
 gets partway through D_DoomMain and then produces no frame, which from outside
 is indistinguishable from a WAD that failed to load. It is refused, with the
 remedy in the message.
@@ -87,7 +99,7 @@ backtrace that points at an innocent leaf and says nothing about stacks.
 
 **`-include` is processed before the file's first line.** The hook header is
 force-included into every translation unit including the one that *implements*
-the hooks, so `#define LUMPER_HOOKS_IMPL`-style guards arrive too late and the
+the hooks, so `#define ..._HOOKS_IMPL`-style guards arrive too late and the
 include guard then makes that file's own `#include` a no-op. Every hook calls
 itself. `EngineImpl.c` undoes the macros with explicit `#undef`s as its first
 real act; that is not tidiness, it is the fix.
@@ -100,7 +112,7 @@ same pass that flips the picture.
 **Three conflicting ideas of row 0.** Doom's framebuffer is top-left origin; GL
 textures (and FFGL) are bottom-left; PPM is top-down. The picture is upside
 down in exactly one of the three places you look if any one is wrong. The
-engine flips once, so `ResodoomFrame::pixels` goes straight into a texture, and
+engine flips once, so a published frame goes straight into a texture, and
 only the PPM writers un-flip.
 
 **A ranged parameter cannot have a ranged default.** `SetParamInfo` clamps an
@@ -139,6 +151,18 @@ Software's release of the Doom source, which is GPL. Anything linked into this
 binary inherits it. That is fine for a public repo and it is why this one is
 not MIT like the rest of the fleet.
 
+**stagehand is MIT and stays MIT.** MIT may be linked into a GPL work, which is
+the direction used here; the combined binary released from this repo is
+GPL-2.0, and stagehand's own files keep their licence and can be reused
+anywhere. The reverse does not hold, so no GPL code may be moved into it.
+
+**`source/engine/EngineImpl.c` stays here, deliberately.** We wrote it and
+could in principle offer it under any terms, but it implements doomgeneric's
+callbacks, is compiled into the GPL engine and is meaningless on its own.
+Labelling it MIT would be a technicality rather than an honest offer, and it
+would invite somebody to think they could use it without the obligations that
+actually come with it.
+
 **No WAD, no PWAD and no game content is committed here, ever.** The plugin
 loads what the operator points it at. `.gitignore` blocks `*.wad`, `*.pk3`,
 `*.deh` and `wads/` for that reason, and the About text says so to the
@@ -166,10 +190,10 @@ and **skips loudly** rather than quietly passing without one.
 
 - **`resotest`** — the engine on the CPU, no graphics API anywhere. It loads
   the engine through the same private-copy dlopen the plugin uses, so what it
-  exercises is the shipped artefact. Nineteen checks: the failure paths, that
+  exercises is the shipped artefact. Twenty-three checks: the failure paths, that
   the engine never runs past its budget, that the undefined alpha is forced,
   that the frame is real picture rather than one flat colour, that a second
-  `Start` in one copy is refused with the remedy, and that **two cold runs are
+  `Open` in one copy is refused with the remedy, and that **two cold runs are
   byte-identical** — which is the check that catches the clock drifting
   anywhere near real time.
 - **`resogl`** — the **real plugin class** through the real FFGL sequence in a

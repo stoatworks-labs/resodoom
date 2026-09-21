@@ -1,18 +1,21 @@
 #pragma once
 
 #include "Controls.h"
-#include "Engine.h"
+
+#include <stagehand/Present.h>
+#include <stagehand/Sidecar.h>
 
 #include <FFGLSDK.h>
 
-#include <memory>
 #include <string>
+#include <vector>
 
 /**
 	Doom running inside Resolume, as an FFGL source.
 
-	The engine thread publishes a frame, `ProcessOpenGL` uploads it and draws
-	it, and the picture is on screen the same composition frame it was made.
+	The loading, the clock and the presentation all belong to stagehand; what
+	is left here is the part that is actually about Doom -- which WAD, which
+	level, which keys, and how it is offered to an operator in an inspector.
 
 	## What this is shaped by
 
@@ -28,15 +31,6 @@
 	the host mid-show. What survives is the layer going black with the reason
 	in the log; what does not survive is undefined behaviour inside Doom, and
 	nothing here can promise otherwise. See AGENTS.md.
-
-	**`ffglex::Scoped*` bindings clear to 0 on scope exit rather than restoring
-	what was there**, so the render path uses plain `glUseProgram` and
-	`glBindTexture` and puts state back by hand.
-
-	**No FBO is allocated anywhere.** `FFGLFBO::Initialise` allocates under a
-	`ScopedTextureBinding` whose destructor clears the binding, and
-	`FFGLFBO::Release` leaks its colour texture. A source draws a textured quad
-	and needs neither.
 
 	**Nearest filtering is the default and it matters.** 320x200 scaled to a 4K
 	output with linear filtering is a blurred mess, and large hard-edged pixels
@@ -62,20 +56,17 @@ public:
 	char*    GetTextParameter( unsigned int index ) override;
 
 private:
-	bool BuildShader();
-
 	/// Tear down and reload the engine. Render thread only.
 	void ApplyPendingLoad();
 
-	/// Push every changed button through to the engine as a key edge.
+	/// Push every changed button through as a key edge.
 	void SendInput();
 
-	/// Upload the newest frame if there is one. False if there is nothing to draw.
-	bool UpdateTexture();
+	/// Absolute path to the engine library shipped in this bundle, or empty.
+	static std::string EngineLibraryPath();
 
-	void ComputeQuadScale( int vpWidth, int vpHeight, float& sx, float& sy ) const;
-
-	Engine mEngine;
+	stagehand::Sidecar   mEngine;
+	stagehand::Presenter mPresenter;
 
 	// Paths as the host gave them, against what is actually loaded. Resolume
 	// re-sends the same value on composition load and on undo, and reloading
@@ -88,8 +79,8 @@ private:
 	bool mPendingLoad = false;
 
 	/// Set when a load failed, cleared when the paths change. Stops the render
-	/// thread rebuilding a broken engine sixty times a second and filling the
-	/// log -- and, worse, staging sixty copies of the library into /tmp.
+	/// thread rebuilding a broken engine sixty times a second -- and, worse,
+	/// staging sixty copies of the library into the temp directory.
 	bool mLoadFailed = false;
 
 	float mParams[ PT_COUNT ] = { 0.0f };
@@ -99,13 +90,9 @@ private:
 	/// button scrolls at the composition's frame rate.
 	bool mButtonWasDown[ PT_COUNT ] = { false };
 
-	std::unique_ptr< ResodoomFrame > mFrame;
-
-	ffglex::FFGLShader mShader;
-	GLuint             mVAO     = 0;
-	GLuint             mTexture = 0;
-	bool               mTextureAllocated = false;
-	uint32_t           mUploadedSeq      = 0;
+	/// One frame's staging, allocated once. Too big for the render thread's
+	/// stack and too big to allocate per frame.
+	std::vector< uint8_t > mFrame;
 
 	FFGLViewportStruct mViewport { 0, 0, 0, 0 };
 };

@@ -16,10 +16,23 @@ not yet a fleet repo, never loaded into Resolume.*
 in `~/dev` rather than `~/Projects/resolume` because it is not a fleet repo
 yet, the same way occluder and songbook started.
 
-Two commits: the engine, then the plugin. Everything below is verified
-headlessly on an M4 Max against Freedoom Phase 1 0.13.0.
+Everything below is verified headlessly on an M4 Max against Freedoom Phase 1
+0.13.0.
 
-- `resotest` — 19 checks, 0 failures. Engine only, no graphics API.
+**The non-Doom half was split out into `stagehand` (MIT, public) on
+2026-09-21** and is consumed here as a submodule — private-copy loading, clock
+pacing, the letterbox maths, texture presentation and the log. The engine now
+implements stagehand's generic source ABI rather than a bespoke one, so the
+licence boundary is compiled and tested instead of asserted. `EngineImpl.c`
+deliberately did NOT move: we wrote it, but it implements doomgeneric's
+callbacks and is meaningless outside the GPL link.
+
+Splitting it found two real bugs in the fitting maths that had been sitting in
+the plugin: Integer falling back to Contain kept an oversized multiple on one
+axis, and the pixel aspect had been written as 1.2 where the standard
+convention (width over height) wants 5/6.
+
+- `resotest` — 23 checks, 0 failures. Engine only, no graphics API.
 - `resogl` — 14 checks, 0 failures, at **both** 1280x720 and 720x720.
 - `tools/verify.sh` — all of the above plus symbol checks, passing.
 - Universal `.bundle` built and `lipo`-confirmed x86_64 + arm64.
@@ -69,8 +82,8 @@ first instruction of `lumper_hook_malloc`, stack too corrupt for lldb to
 unwind past frame 0. Nothing in that backtrace suggests "stack size".
 
 **`-include` is processed before line 1 of the file that receives it.** So the
-`#define LUMPER_HOOKS_IMPL` at the top of the hook implementation arrived
-*after* the macros existed, and the include guard then turned that file's own
+`#define ..._HOOKS_IMPL` at the top of the hook implementation arrived *after*
+the macros existed, and the include guard then turned that file's own
 `#include` into a no-op — every hook called itself. This presented as the
 *same* SIGBUS as the stack-size bug, at the same address, which is why I
 "fixed" the stack size and saw no change. Two different bugs with one symptom.

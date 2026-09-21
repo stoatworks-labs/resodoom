@@ -42,7 +42,7 @@
 	#include <pthread/qos.h>
 #endif
 
-#include "ResodoomEngine.h"
+#include "stagehand/SourceAbi.h"
 #include "ResodoomHooks.h"
 
 /*
@@ -58,6 +58,26 @@
 #undef realloc
 #undef free
 #undef strdup
+
+/*
+	Doom's own geometry and rate. These used to live in a bespoke header shared
+	with the plugin; now the plugin asks through Describe(), so they belong
+	here with the engine that actually decides them.
+*/
+#define RESODOOM_WIDTH   320
+#define RESODOOM_HEIGHT  200
+#define RESODOOM_BYTES   ( RESODOOM_WIDTH * RESODOOM_HEIGHT * 4 )
+#define RESODOOM_TICRATE 35
+
+/*
+	Pixel aspect: WIDTH over HEIGHT, which for Doom is 5/6 and not 6/5.
+
+	320x200 was always displayed at 4:3, so its pixels are 1.2 times TALLER
+	than they are wide -- and the ratio of a pixel that is taller than it is
+	wide is less than one. Writing 1.2 here gives a 1.92 display aspect, which
+	is wider than 16:9, and every face in the game comes out stretched.
+*/
+#define RESODOOM_PIXEL_ASPECT ( 5.0f / 6.0f )
 
 /* doomgeneric's own entry points. Declared here rather than including
    doomgeneric.h so this file does not inherit DOOMGENERIC_RESX's default. */
@@ -240,7 +260,7 @@ typedef struct Engine
 	pthread_t       thread;
 	bool            threadLive;
 
-	atomic_int      state;       /* ResodoomState                              */
+	atomic_int      state;       /* StagehandState                           */
 	atomic_bool     quit;
 
 	/* The virtual clock, in two halves. `budgetTics` is how much time the
@@ -258,7 +278,9 @@ typedef struct Engine
 	   and the consumer swaps `ready` out for its own spare. Lock-free by
 	   construction: the consumer must never block, because it is Resolume's
 	   render thread and a stall there is a dropped show. */
-	ResodoomFrame     slots[ 3 ];
+	uint8_t         slots[ 3 ][ RESODOOM_BYTES ];
+	uint32_t        slotSeq[ 3 ];
+	uint32_t        slotTic[ 3 ];
 	atomic_int      readySlot;   /* -1 when nothing new                      */
 	int             writeSlot;
 	int             spareSlot;
@@ -274,7 +296,7 @@ typedef struct Engine
 	jmp_buf         escape;
 	char            status[ RESODOOM_STATUS_MAX ];
 
-	ResodoomConfig    cfg;
+	int             deterministic;
 	char            argvStore[ RESODOOM_ARGV_MAX ][ 1024 ];
 	char*           argv[ RESODOOM_ARGV_MAX ];
 	int             argc;
@@ -313,7 +335,7 @@ void resodoom_hook_exit( int code )
 				"just above this line -- it usually names the WAD",
 				code );
 
-	atomic_store( &g.state, RESODOOM_FAILED );
+	atomic_store( &g.state, STAGEHAND_FAILED );
 	longjmp( g.escape, 1 );
 }
 
@@ -438,14 +460,14 @@ void DG_DrawFrame( void )
 		longjmp( g.escape, 2 );
 
 	/* --- convert and publish ------------------------------------- */
-	ResodoomFrame* dst = &g.slots[ g.writeSlot ];
+	uint8_t* dst = g.slots[ g.writeSlot ];
 
 	/*
 		Three things happen in this copy, and all three are the kind of mistake
 		that renders as "the plugin does nothing":
 
 		- The flip. Doom's framebuffer is top-left origin; a GL texture is
-		  bottom-left. Flipping here means ResodoomFrame::pixels goes straight
+		  bottom-left. Flipping here means the published buffer goes straight
 		  into a texture and nothing downstream has to think about it.
 		- Alpha. The X in XRGB8888 is undefined, not zero, and Doom leaves
 		  stale bits in it. Passed through, Resolume gets a mostly-transparent
@@ -459,7 +481,7 @@ void DG_DrawFrame( void )
 		for( int y = 0; y < RESODOOM_HEIGHT; ++y )
 		{
 			const uint32_t* in  = src + (size_t)y * RESODOOM_WIDTH;
-			uint32_t*       out = (uint32_t*)dst->pixels
+			uint32_t*       out = (uint32_t*)dst
 								+ (size_t)( RESODOOM_HEIGHT - 1 - y ) * RESODOOM_WIDTH;
 			for( int x = 0; x < RESODOOM_WIDTH; ++x )
 				out[ x ] = in[ x ] | 0xFF000000u;
@@ -469,10 +491,10 @@ void DG_DrawFrame( void )
 	uint32_t drawnAt =
 		(uint32_t)( ( (uint64_t)atomic_load( &g.clockMs ) * RESODOOM_TICRATE ) / 1000u );
 	uint32_t seq     = atomic_fetch_add( &g.seq, 1 ) + 1;
-	dst->seq         = seq;
-	dst->tic         = drawnAt;
+	g.slotSeq[ g.writeSlot ] = seq;
+	g.slotTic[ g.writeSlot ] = drawnAt;
 	atomic_store( &g.tic, drawnAt );
-	atomic_store( &g.state, RESODOOM_RUNNING );
+	atomic_store( &g.state, STAGEHAND_RUNNING );
 
 	/* Hand this slot to the consumer and take whichever one it left behind. */
 	int previous = atomic_exchange( &g.readySlot, g.writeSlot );
@@ -503,8 +525,34 @@ static void argv_push_int( const char* value, int n )
 	argv_push( buf );
 }
 
-static void build_argv( const ResodoomConfig* cfg )
+/*
+	Options arrive as a key/value list rather than a struct, so this engine can
+	grow a setting without the plugin, the harnesses and stagehand's ABI all
+	having to agree on a new struct layout first.
+*/
+static const char* opt( const StagehandOption* options, int count, const char* key )
 {
+	for( int i = 0; i < count; ++i )
+		if( options[ i ].key && strcmp( options[ i ].key, key ) == 0 )
+			return options[ i ].value;
+	return NULL;
+}
+
+static int opt_int( const StagehandOption* options, int count, const char* key, int fallback )
+{
+	const char* v = opt( options, count, key );
+	return ( v && v[ 0 ] ) ? atoi( v ) : fallback;
+}
+
+static void build_argv( const StagehandOption* options, int count )
+{
+	const char* iwad    = opt( options, count, "iwad" );
+	const char* pwad    = opt( options, count, "pwad" );
+	const int   heapMiB = opt_int( options, count, "heap", 0 );
+	const int   skill   = opt_int( options, count, "skill", 0 );
+	const int   episode = opt_int( options, count, "episode", 0 );
+	const int   map     = opt_int( options, count, "map", 0 );
+
 	g.argc = 0;
 	argv_push( "resodoom" );
 
@@ -516,32 +564,32 @@ static void build_argv( const ResodoomConfig* cfg )
 	argv_push( "-nosound" );
 	argv_push( "-nomusic" );
 
-	if( cfg->iwad && cfg->iwad[ 0 ] )
+	if( iwad && iwad[ 0 ] )
 	{
 		argv_push( "-iwad" );
-		argv_push( cfg->iwad );
+		argv_push( iwad );
 	}
-	if( cfg->pwad && cfg->pwad[ 0 ] )
+	if( pwad && pwad[ 0 ] )
 	{
 		argv_push( "-file" );
-		argv_push( cfg->pwad );
+		argv_push( pwad );
 	}
-	if( cfg->heapMiB > 0 )
-		argv_push_int( "-mb", cfg->heapMiB );
-	if( cfg->skill >= 1 && cfg->skill <= 5 )
-		argv_push_int( "-skill", cfg->skill );
-	if( cfg->episode > 0 && cfg->map > 0 )
+	if( heapMiB > 0 )
+		argv_push_int( "-mb", heapMiB );
+	if( skill >= 1 && skill <= 5 )
+		argv_push_int( "-skill", skill );
+	if( episode > 0 && map > 0 )
 	{
 		char buf[ 32 ];
-		snprintf( buf, sizeof( buf ), "%d", cfg->episode );
+		snprintf( buf, sizeof( buf ), "%d", episode );
 		argv_push( "-warp" );
 		argv_push( buf );
-		snprintf( buf, sizeof( buf ), "%d", cfg->map );
+		snprintf( buf, sizeof( buf ), "%d", map );
 		argv_push( buf );
 	}
-	else if( cfg->map > 0 )
+	else if( map > 0 )
 	{
-		argv_push_int( "-warp", cfg->map );
+		argv_push_int( "-warp", map );
 	}
 
 	g.argv[ g.argc ] = NULL;
@@ -574,13 +622,13 @@ static void* engine_thread( void* unused )
 		while( !atomic_load( &g.quit ) )
 			doomgeneric_Tick();
 
-		atomic_store( &g.state, RESODOOM_STOPPED );
+		atomic_store( &g.state, STAGEHAND_CLOSED );
 	}
 	else if( jumped == 2 )
 	{
-		atomic_store( &g.state, RESODOOM_STOPPED );
+		atomic_store( &g.state, STAGEHAND_CLOSED );
 	}
-	/* jumped == 1: resodoom_hook_exit already set RESODOOM_FAILED and the text. */
+	/* jumped == 1: resodoom_hook_exit already set STAGEHAND_FAILED and the text. */
 
 	return NULL;
 }
@@ -608,7 +656,7 @@ static void* engine_thread( void* unused )
 */
 static bool g_everStarted = false;
 
-static int api_start( const ResodoomConfig* cfg )
+static int api_open( const StagehandOption* options, int count )
 {
 	if( g.threadLive )
 		return -1;
@@ -617,21 +665,22 @@ static int api_start( const ResodoomConfig* cfg )
 	{
 		set_status( "this engine copy has already run -- load a fresh copy of "
 					"the library instead of restarting this one" );
-		atomic_store( &g.state, RESODOOM_FAILED );
+		atomic_store( &g.state, STAGEHAND_FAILED );
 		return -1;
 	}
-	if( !cfg || !cfg->iwad || !cfg->iwad[ 0 ] )
+	const char* iwad = opt( options, count, "iwad" );
+	if( !iwad || !iwad[ 0 ] )
 	{
-		set_status( "no IWAD selected" );
-		atomic_store( &g.state, RESODOOM_FAILED );
+		set_status( "no WAD selected" );
+		atomic_store( &g.state, STAGEHAND_FAILED );
 		return -1;
 	}
 
-	g.cfg = *cfg;
+	g.deterministic = opt_int( options, count, "deterministic", 0 );
 	pthread_mutex_init( &g.gate, NULL );
 	pthread_cond_init( &g.gateCv, NULL );
 
-	atomic_store( &g.state, RESODOOM_STARTING );
+	atomic_store( &g.state, STAGEHAND_STARTING );
 	atomic_store( &g.quit, false );
 	atomic_store( &g.seq, 0 );
 	atomic_store( &g.tic, 0 );
@@ -645,7 +694,7 @@ static int api_start( const ResodoomConfig* cfg )
 	atomic_store( &g.clockMs, 0 );
 	set_status( "starting" );
 
-	build_argv( cfg );
+	build_argv( options, count );
 
 	/*
 		One tic of budget up front. `doomgeneric_Create` runs a tick of its own
@@ -673,7 +722,7 @@ static int api_start( const ResodoomConfig* cfg )
 	if( rc != 0 )
 	{
 		set_status( "could not start the engine thread: %s", strerror( rc ) );
-		atomic_store( &g.state, RESODOOM_FAILED );
+		atomic_store( &g.state, STAGEHAND_FAILED );
 		return -1;
 	}
 	g.threadLive  = true;
@@ -681,7 +730,7 @@ static int api_start( const ResodoomConfig* cfg )
 	return 0;
 }
 
-static void api_stop( void )
+static void api_close( void )
 {
 	if( g.threadLive )
 	{
@@ -695,12 +744,24 @@ static void api_stop( void )
 	}
 
 	alloc_free_all();
-	atomic_store( &g.state, RESODOOM_STOPPED );
+	atomic_store( &g.state, STAGEHAND_CLOSED );
 }
 
-static ResodoomState api_state( void )
+static int api_state( void )
 {
-	return (ResodoomState)atomic_load( &g.state );
+	return atomic_load( &g.state );
+}
+
+static void api_describe( StagehandInfo* out )
+{
+	if( !out )
+		return;
+	out->width           = RESODOOM_WIDTH;
+	out->height          = RESODOOM_HEIGHT;
+	out->rateNumerator   = RESODOOM_TICRATE;
+	out->rateDenominator = 1;
+	out->pixelAspect     = RESODOOM_PIXEL_ASPECT;
+	out->frameBytes      = RESODOOM_BYTES;
 }
 
 static const char* api_status( void )
@@ -719,7 +780,7 @@ static const char* api_status( void )
 	real -- the time has already passed -- and it is what keeps the game on the
 	composition's clock rather than on a debt schedule.
 
-	It is OFF under `cfg.deterministic`, and has to be. The cap compares the
+	It is OFF under the `deterministic` option, and has to be. The cap compares the
 	budget against the wall-clock-free notion of what has been spent, which is
 	only meaningful when grants arrive at roughly real time. A harness grants
 	as fast as it can step, immediately looks over-granted, and then has every
@@ -733,7 +794,7 @@ static void api_grant( int tics )
 	if( tics <= 0 )
 		return;
 
-	if( !g.cfg.deterministic )
+	if( !g.deterministic )
 	{
 		uint32_t spentTics =
 			(uint32_t)( ( (uint64_t)atomic_load( &g.clockMs ) * RESODOOM_TICRATE ) / 1000u );
@@ -748,9 +809,10 @@ static void api_grant( int tics )
 	pthread_cond_broadcast( &g.gateCv );
 }
 
-static int api_frame( ResodoomFrame* out, uint32_t lastSeq )
+static int api_frame( void* dst, size_t dstBytes, uint32_t lastSeq, uint32_t* outSeq,
+					  uint32_t* outTick )
 {
-	if( !out )
+	if( !dst || dstBytes < RESODOOM_BYTES )
 		return 0;
 
 	int ready = atomic_exchange( &g.readySlot, -1 );
@@ -759,14 +821,26 @@ static int api_frame( ResodoomFrame* out, uint32_t lastSeq )
 
 	/* Take the slot; the engine gets our spare in exchange next time it
 	   publishes, which is what keeps this copy free of any lock. */
-	memcpy( out, &g.slots[ ready ], sizeof( ResodoomFrame ) );
-	g.spareSlot = ready;
+	memcpy( dst, g.slots[ ready ], RESODOOM_BYTES );
+	const uint32_t seq = g.slotSeq[ ready ];
+	const uint32_t tic = g.slotTic[ ready ];
+	g.spareSlot        = ready;
 
-	return out->seq != lastSeq;
+	if( outSeq )
+		*outSeq = seq;
+	if( outTick )
+		*outTick = tic;
+
+	return seq != lastSeq;
 }
 
-static void api_key( int doomKey, int down )
+static void api_event( int doomKey, int down )
 {
+	/*
+		stagehand's event vocabulary is whatever the source documents, and this
+		one's is doomkeys.h: the plugin sends KEY_FIRE, KEY_USE and the rest
+		straight through. Anything outside a byte is not a Doom key.
+	*/
 	if( doomKey < 0 || doomKey > 255 )
 		return;
 
@@ -794,27 +868,30 @@ static uint32_t api_parks( void )
 	return atomic_load( &g.parks );
 }
 
-static void api_release_all( void )
+static void api_release_inputs( void )
 {
 	for( int k = 0; k < 256; ++k )
 		if( g.held[ k ] )
-			api_key( k, 0 );
+			api_event( k, 0 );
 }
 
-static const ResodoomEngineApi kApi = {
-	RESODOOM_ABI_VERSION,
-	api_start,
-	api_stop,
+/* Order must match StagehandSourceApi exactly. The struct is positional, so a
+   field in the wrong place is a call through the wrong function pointer. */
+static const StagehandSourceApi kApi = {
+	STAGEHAND_ABI_VERSION,
+	api_open,
+	api_close,
 	api_state,
 	api_status,
+	api_describe,
 	api_grant,
 	api_frame,
-	api_key,
-	api_release_all,
+	api_event,
+	api_release_inputs,
 	api_parks,
 };
 
-const ResodoomEngineApi* resodoom_engine_api( void )
+const StagehandSourceApi* stagehand_source_api( void )
 {
 	return &kApi;
 }

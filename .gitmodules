@@ -4,3 +4,6 @@
 [submodule "external/doomgeneric"]
 	path = external/doomgeneric
 	url = https://github.com/ozkl/doomgeneric
+[submodule "external/stagehand"]
+	path = external/stagehand
+	url = https://github.com/stoatworks-labs/stagehand

@@ -35,8 +35,8 @@ cmake --build build
 cmake --install build      # drops the bundle into Resolume's plugin folder
 ```
 
-`--recursive` matters: the FFGL SDK and doomgeneric are both submodules, and
-the build stops with instructions if they are missing.
+`--recursive` matters: the FFGL SDK, doomgeneric and stagehand are all
+submodules, and the build stops with instructions if any is missing.
 
 ## Using it
 
@@ -80,11 +80,42 @@ branch is invisible whenever the picture happens to be the wider one.
 
 ## Licence
 
-**GPL-2.0**, because it links [doomgeneric](https://github.com/ozkl/doomgeneric),
-which descends from id Software's own release of the Doom source. See
-[LICENSE](LICENSE). Upstream is a pristine submodule — everything this project
-changes about it is done by force-including one header, so the submodule's
-`git diff` stays empty.
+> ### This repo is GPL-2.0, not MIT.
+>
+> Every other Stoatworks plugin is MIT. This one is not, and it cannot be: it
+> ships [doomgeneric](https://github.com/ozkl/doomgeneric), which descends from
+> id Software's own release of the Doom source, and that is GPL. Anything
+> linked into this binary inherits it.
+>
+> **If you are here to reuse code, you probably want
+> [stagehand](https://github.com/stoatworks-labs/stagehand) instead** — the MIT
+> half, split out for exactly this reason.
+
+See [LICENSE](LICENSE) for the full text.
+
+doomgeneric is a pristine submodule: everything this project changes about it
+is done by force-including one header, so the submodule's `git diff` stays
+empty and updating upstream is a version bump rather than a merge.
 
 DOOM is a trademark of id Software LLC. This project is an unaffiliated FFGL
 front end for a free source port, and ships no id Software content.
+
+## The MIT half
+
+The parts of this that are not about Doom live in a separate repo,
+[stagehand](https://github.com/stoatworks-labs/stagehand), under **MIT**:
+loading a private copy of a source library, paying out its clock against
+elapsed real time, and presenting its frames as a letterboxed quad. It depends
+on OpenGL and `libdl` and nothing else — not even on FFGL — and is useful
+without Doom anywhere near it.
+
+That split is real rather than cosmetic: this repo consumes stagehand as a
+submodule and the engine here implements stagehand's generic source ABI, so
+the boundary is compiled and tested rather than asserted. MIT code may be
+linked into a GPL work, which is this direction; the combined binary released
+here is GPL-2.0, and stagehand's files stay MIT and reusable anywhere.
+
+What is **not** in stagehand, deliberately: `source/engine/EngineImpl.c`, the
+platform layer that implements doomgeneric's callbacks. We wrote it, but it is
+compiled into the GPL engine and is meaningless outside it, so calling it MIT
+would be a technicality rather than an honest offer.

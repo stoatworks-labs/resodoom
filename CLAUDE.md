@@ -4,8 +4,15 @@
 FFGL layer: composite it, key it, run it through other effects, MIDI-map the
 controls. With nothing mapped it plays Doom's attract demos forever.
 
-C++17 + C11, CMake → universal `.bundle` (macOS). **GPL-2.0** (doomgeneric
-descends from id's Doom source), public.
+C++17 + C11, CMake → universal `.bundle` (macOS). **GPL-2.0 — NOT the fleet's
+usual MIT**, because doomgeneric descends from id's Doom source and anything
+linked into this binary inherits it. Public.
+
+The non-Doom half is a separate MIT repo, `stagehand`, consumed here as a
+submodule: it owns the private-copy loading, the clock pacing, the letterbox
+maths, the texture presentation and the diagnostics log. Before adding
+anything to `source/`, ask whether it belongs there instead — and never move
+GPL code in that direction.
 
 Read `AGENTS.md` before changing the clock, the loading arrangement, or
 anything about what may be shipped. **No WAD is ever committed here.**
@@ -15,6 +22,8 @@ anything about what may be shipped. **No WAD is ever committed here.**
 - Fast dev build: add `-DCMAKE_OSX_ARCHITECTURES=arm64`
 - Build: `cmake --build build`
 - Install into Resolume: `cmake --install build`
+- Submodules: `git submodule update --init --recursive` (ffgl, doomgeneric,
+  stagehand — the build stops with instructions if any is missing)
 - Skip pieces: `-DRESODOOM_BUILD_PLUGIN=OFF`, `-DRESODOOM_BUILD_TOOLS=OFF`
   (these are cached — re-running `cmake -B build` without them keeps the old
   value, so pass `=ON` explicitly to turn one back on)
@@ -50,6 +59,10 @@ MIDI-maps, keyboard-maps and automates them like anything else.
 - Upstream is a **pristine submodule**. Changes are made by force-including
   `source/engine/ResodoomHooks.h`, which intercepts `exit` and the allocator.
   `EngineImpl.c` must `#undef` those macros — `-include` runs before line 1.
+- The engine implements **stagehand's generic source ABI**, not a bespoke one.
+  Options arrive as a key/value list, so adding a setting needs no ABI change.
+- **`pixelAspect` is pixel WIDTH over HEIGHT**, so Doom's is 5/6 and not 1.2.
+  The reciprocal gives a 1.92 display aspect and stretches every face.
 - **No FBO anywhere**, and no `ffglex::Scoped*` bindings — both are SDK traps.
 - **There is no audio.** FFGL has no audio path; Doom runs `-nosound -nomusic`.
 - macOS build must be universal. Verify with `lipo`, never the build log.

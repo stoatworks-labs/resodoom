@@ -18,6 +18,22 @@ endif()
 
 set( DG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/doomgeneric/doomgeneric )
 
+# ---------------------------------------------------------------------------
+# stagehand -- the MIT half.
+#
+# Everything here that is not about Doom lives there: loading a private copy of
+# a source library, paying out its clock, and presenting its frames. It is a
+# separate repo because it is genuinely independent and useful without Doom,
+# and keeping it separate is what lets it stay MIT while this repo is GPL-2.0.
+# MIT links into GPL; the combined binary this repo distributes is GPL-2.0.
+# ---------------------------------------------------------------------------
+if( NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/stagehand/CMakeLists.txt )
+	message( FATAL_ERROR
+		"external/stagehand is empty. This is a submodule:\n"
+		"  git submodule update --init --recursive" )
+endif()
+add_subdirectory( external/stagehand EXCLUDE_FROM_ALL )
+
 if( NOT EXISTS ${DG_DIR}/doomgeneric.c )
 	message( FATAL_ERROR
 		"external/doomgeneric is empty. This is a submodule:\n"
@@ -65,6 +81,7 @@ add_library( resodoom_engine SHARED
 target_include_directories( resodoom_engine PUBLIC
 	${DG_DIR}
 	${CMAKE_CURRENT_SOURCE_DIR}/source/engine
+	${CMAKE_CURRENT_SOURCE_DIR}/external/stagehand/include
 )
 
 target_compile_definitions( resodoom_engine PRIVATE
@@ -115,13 +132,9 @@ if( RESODOOM_BUILD_PLUGIN AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/ffgl/C
 		source/Plugin.h
 		source/Plugin.cpp
 		source/Controls.h
-		source/Engine.h
-		source/Engine.cpp
-		source/Diag.h
-		source/Diag.cpp
 	)
 	target_include_directories( resodoom_plugin PUBLIC source )
-	target_link_libraries( resodoom_plugin PUBLIC ffgl::sdk ${CMAKE_DL_LIBS} )
+	target_link_libraries( resodoom_plugin PUBLIC ffgl::sdk stagehand ${CMAKE_DL_LIBS} )
 	set_target_properties( resodoom_plugin PROPERTIES POSITION_INDEPENDENT_CODE ON )
 
 	if( NOT APPLE )
@@ -130,7 +143,10 @@ if( RESODOOM_BUILD_PLUGIN AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/ffgl/C
 	endif()
 
 	add_library( ResodoomSource MODULE source/SourcePlugin.cpp )
-	target_link_libraries( ResodoomSource PRIVATE resodoom_plugin )
+	# Both OBJECT libraries named explicitly: CMake does not propagate the
+	# *objects* of one OBJECT library through another, so a transitive link
+	# configures happily and then fails with every stagehand symbol undefined.
+	target_link_libraries( ResodoomSource PRIVATE resodoom_plugin stagehand )
 
 	if( APPLE )
 		set_target_properties( ResodoomSource PROPERTIES
@@ -174,7 +190,7 @@ if( RESODOOM_BUILD_PLUGIN AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/ffgl/C
 	# will not compile or a uniform whose name does not match the GLSL.
 	if( RESODOOM_BUILD_TOOLS AND APPLE )
 		add_executable( resogl tools/resogl/main.cpp )
-		target_link_libraries( resogl PRIVATE resodoom_plugin
+		target_link_libraries( resogl PRIVATE resodoom_plugin stagehand
 			"-framework OpenGL"
 			"-framework AppKit"
 		)
@@ -204,7 +220,10 @@ endif()
 # ---------------------------------------------------------------------------
 if( RESODOOM_BUILD_TOOLS )
 	add_executable( resotest tools/resotest/main.c )
-	target_include_directories( resotest PRIVATE source/engine )
+	target_include_directories( resotest PRIVATE
+		source/engine
+		external/stagehand/include
+	)
 	target_link_libraries( resotest PRIVATE ${CMAKE_DL_LIBS} )
 	# The harness loads the engine exactly as the plugin does, by path, so the
 	# thing under test is the shipped artefact and not a relinked copy of it.

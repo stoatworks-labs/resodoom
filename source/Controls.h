@@ -1,6 +1,6 @@
 #pragma once
 
-#include "engine/ResodoomEngine.h"
+#include <stagehand/Present.h>
 
 #include <cmath>
 
@@ -106,23 +106,19 @@ inline const char* ButtonName( unsigned param )
 	}
 }
 
-enum class Scaling
+/*
+	The inspector's names for stagehand::Fit. "Fit" and "Fill" are what a VJ
+	expects to read in a Resolume inspector; "Contain" and "Cover" are what the
+	rest of the world calls the same two things.
+*/
+inline stagehand::Fit FitFromParam( float value )
 {
-	Fit,
-	Fill,
-	Stretch,
-	Integer
-};
-
-inline Scaling ScalingFromParam( float value )
-{
-	const int index = int( std::lround( value ) );
-	switch( index )
+	switch( int( std::lround( value ) ) )
 	{
-		case 1:  return Scaling::Fill;
-		case 2:  return Scaling::Stretch;
-		case 3:  return Scaling::Integer;
-		default: return Scaling::Fit;
+		case 1:  return stagehand::Fit::Cover;
+		case 2:  return stagehand::Fit::Stretch;
+		case 3:  return stagehand::Fit::Integer;
+		default: return stagehand::Fit::Contain;
 	}
 }
 

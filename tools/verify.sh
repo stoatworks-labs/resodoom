@@ -37,11 +37,11 @@ cmake --build "$BUILD" -j8 >> "$BUILD.log" 2>&1 || { tail -40 "$BUILD.log"; exit
 echo "ok"
 
 say "the engine is loadable and exports exactly one symbol"
-# Hidden visibility everywhere except the one entry point. doomgeneric has
-# several hundred file-scope globals and none of them belong in the host's
-# symbol namespace.
+# Hidden visibility everywhere except the one stagehand entry point.
+# doomgeneric has several hundred file-scope globals and none of them belong in
+# the host's symbol namespace.
 EXPORTS=$( nm -gU "$BUILD/libresodoom_engine.dylib" 2>/dev/null \
-           | grep -c "resodoom_engine_api" || true )
+           | grep -c "stagehand_source_api" || true )
 if [ "$EXPORTS" -ne 1 ]; then
     echo "FAIL: expected exactly one exported entry point, found $EXPORTS"
     exit 1

@@ -10,9 +10,9 @@
 	  resotest --iwad W.wad --tics 200 --out /tmp/f.ppm
 	  resotest --iwad W.wad --tics 400 --seq /tmp/f_     a PPM per frame
 
-	Every run here sets `deterministic`, which freezes the engine's only link
-	to real time. Two cold runs are then byte-identical and a pixel digest is a
-	stable thing to assert against.
+	Every run here sets the `deterministic` option, which freezes the engine's
+	only link to real time. Two cold runs are then byte-identical and a pixel
+	digest is a stable thing to assert against.
 */
 #include <dlfcn.h>
 #include <stdio.h>
@@ -21,11 +21,18 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "ResodoomEngine.h"
+#include "stagehand/SourceAbi.h"
 
 #ifndef RESODOOM_ENGINE_DEFAULT_PATH
 	#define RESODOOM_ENGINE_DEFAULT_PATH "./libresodoom_engine.dylib"
 #endif
+
+/* Doom's geometry. Checked against the engine's own Describe() rather than
+   assumed -- the two disagreeing is exactly the sort of thing that produces a
+   sheared picture and no error message. */
+#define RESODOOM_WIDTH  320
+#define RESODOOM_HEIGHT 200
+#define RESODOOM_BYTES  ( RESODOOM_WIDTH * RESODOOM_HEIGHT * 4 )
 
 static int g_failures = 0;
 static int g_checks   = 0;
@@ -38,15 +45,27 @@ static void ok( int condition, const char* what )
 		g_failures += 1;
 }
 
+/*
+	The harness's own frame. The ABI hands back raw pixels plus two numbers, so
+	what used to be a struct in a shared header is now local to each side --
+	which is the point of an ABI that does not dictate a layout.
+*/
+typedef struct Frame
+{
+	uint32_t seq;
+	uint32_t tic;
+	uint8_t  pixels[ RESODOOM_BYTES ];
+} Frame;
+
 /* ------------------------------------------------------------------ */
 /* Loading a private copy                                              */
 /* ------------------------------------------------------------------ */
 
 typedef struct EngineRef
 {
-	void*                    dl;
-	char                     path[ 1024 ];
-	const ResodoomEngineApi* api;
+	void*                     dl;
+	char                      path[ 1024 ];
+	const StagehandSourceApi* api;
 } EngineRef;
 
 static int g_copyCounter = 0;
@@ -55,7 +74,8 @@ static int g_copyCounter = 0;
 	dlopen keys on path: opening a library that is already loaded returns the
 	SAME image with a bumped refcount, not a second copy of its globals. Doom
 	is nothing but globals, so every instance needs its own file on disk. This
-	is the same trick, and the same reason, as cartridge's `uniqueInstance`.
+	is what stagehand::Sidecar does for the plugin; doing it by hand here keeps
+	the harness free of any dependency on the C++ side.
 */
 static int engine_open( const char* source, EngineRef* out )
 {
@@ -93,21 +113,21 @@ static int engine_open( const char* source, EngineRef* out )
 		return 0;
 	}
 
-	resodoom_engine_api_fn entry =
-		(resodoom_engine_api_fn)dlsym( out->dl, RESODOOM_ENGINE_ENTRY );
+	stagehand_source_api_fn entry =
+		(stagehand_source_api_fn)dlsym( out->dl, STAGEHAND_SOURCE_ENTRY );
 	if( !entry )
 	{
-		fprintf( stderr, "resotest: no %s in the engine\n", RESODOOM_ENGINE_ENTRY );
+		fprintf( stderr, "resotest: no %s in the engine\n", STAGEHAND_SOURCE_ENTRY );
 		dlclose( out->dl );
 		unlink( out->path );
 		return 0;
 	}
 
 	out->api = entry();
-	if( !out->api || out->api->abiVersion != RESODOOM_ABI_VERSION )
+	if( !out->api || out->api->abiVersion != STAGEHAND_ABI_VERSION )
 	{
 		fprintf( stderr, "resotest: ABI mismatch -- engine %u, harness %u\n",
-				 out->api ? out->api->abiVersion : 0u, RESODOOM_ABI_VERSION );
+				 out->api ? out->api->abiVersion : 0u, STAGEHAND_ABI_VERSION );
 		dlclose( out->dl );
 		unlink( out->path );
 		return 0;
@@ -118,7 +138,7 @@ static int engine_open( const char* source, EngineRef* out )
 static void engine_close( EngineRef* e )
 {
 	if( e->api )
-		e->api->Stop();
+		e->api->Close();
 	if( e->dl )
 		dlclose( e->dl );
 	if( e->path[ 0 ] )
@@ -128,7 +148,7 @@ static void engine_close( EngineRef* e )
 
 /* ------------------------------------------------------------------ */
 
-static uint64_t digest( const ResodoomFrame* f )
+static uint64_t digest( const Frame* f )
 {
 	uint64_t h = 1469598103934665603ull; /* FNV-1a */
 	for( size_t i = 0; i < RESODOOM_BYTES; ++i )
@@ -139,49 +159,65 @@ static uint64_t digest( const ResodoomFrame* f )
 	return h;
 }
 
-static ResodoomConfig base_config( const char* iwad )
+/* Builds the option list every run shares. `store` holds the formatted ints. */
+typedef struct Options
 {
-	ResodoomConfig cfg = { 0 };
-	cfg.iwad           = iwad;
-	cfg.heapMiB        = 16;
-	cfg.deterministic  = 1;
-	return cfg;
+	StagehandOption opts[ 8 ];
+	int             count;
+	char            skill[ 8 ];
+	char            episode[ 8 ];
+	char            map[ 8 ];
+} Options;
+
+static void build_options( Options* o, const char* iwad, int skill, int episode, int map )
+{
+	memset( o, 0, sizeof( *o ) );
+	snprintf( o->skill, sizeof( o->skill ), "%d", skill );
+	snprintf( o->episode, sizeof( o->episode ), "%d", episode );
+	snprintf( o->map, sizeof( o->map ), "%d", map );
+
+	o->opts[ o->count++ ] = ( StagehandOption ){ "iwad", iwad };
+	o->opts[ o->count++ ] = ( StagehandOption ){ "heap", "16" };
+	/* Freezes the engine's only link to real time -- see the file header. */
+	o->opts[ o->count++ ] = ( StagehandOption ){ "deterministic", "1" };
+	o->opts[ o->count++ ] = ( StagehandOption ){ "skill", o->skill };
+	o->opts[ o->count++ ] = ( StagehandOption ){ "episode", o->episode };
+	o->opts[ o->count++ ] = ( StagehandOption ){ "map", o->map };
+}
+
+static int engine_start( EngineRef* e, const char* iwad, int skill, int episode, int map )
+{
+	Options o;
+	build_options( &o, iwad, skill, episode, map );
+	return e->api->Open( o.opts, o.count ) == 0;
 }
 
 /*
-	Grants `tics` tics one at a time, waiting for a frame after each. Returns
-	how many frames arrived, or -1 if the engine failed or went quiet.
+	Grants `tics` tics one at a time, waiting after each for the engine to
+	SPEND it and park. Returns how many frames arrived, or -1 on failure.
 
-	The grant-then-poll shape is the plugin's in miniature, and like the plugin
-	it never waits on the engine thread for anything: in Resolume the caller is
-	the render thread, and a stall there is a dropped show.
+	Waiting for "a frame appeared" instead is the obvious version and it is not
+	reproducible: Doom draws several frames while spending one tic's budget, so
+	the frame the caller catches depends on how the two threads interleave, and
+	two identical runs disagree on the last one. Waiting for the park counter
+	means the engine has stopped with nothing left to spend, and there is
+	exactly one frame it can be showing.
 */
-static int run( const ResodoomEngineApi* api, int tics, ResodoomFrame* out,
-				void ( *onFrame )( const ResodoomFrame*, void* ), void* user )
+static int run( const StagehandSourceApi* api, int tics, Frame* out,
+				void ( *onFrame )( const Frame*, void* ), void* user )
 {
 	uint32_t lastSeq = 0;
 	int      frames  = 0;
 
 	for( int i = 0; i < tics; ++i )
 	{
-		/*
-			Grant a tic, then wait for the engine to SPEND it and park again.
-
-			Waiting for "a frame appeared" instead is the obvious version and
-			it is not reproducible: Doom draws several frames while spending
-			one tic's worth of budget, so the frame the caller catches depends
-			on how the two threads interleave, and two identical runs disagree
-			on the last one. Waiting for the park counter means the engine has
-			stopped with nothing left to spend, and there is exactly one frame
-			it can be showing.
-		*/
 		uint32_t parked = api->Parks();
 		api->Grant( 1 );
 
 		int spins = 0;
 		while( api->Parks() == parked )
 		{
-			if( api->State() == RESODOOM_FAILED )
+			if( api->State() == STAGEHAND_FAILED )
 			{
 				fprintf( stderr, "resotest: %s\n", api->Status() );
 				return -1;
@@ -194,7 +230,7 @@ static int run( const ResodoomEngineApi* api, int tics, ResodoomFrame* out,
 			usleep( 100 );
 		}
 
-		if( api->Frame( out, lastSeq ) )
+		if( api->Frame( out->pixels, sizeof( out->pixels ), lastSeq, &out->seq, &out->tic ) )
 		{
 			lastSeq = out->seq;
 			frames += 1;
@@ -207,7 +243,7 @@ static int run( const ResodoomEngineApi* api, int tics, ResodoomFrame* out,
 
 /* ------------------------------------------------------------------ */
 
-static int write_ppm( const char* path, const ResodoomFrame* f )
+static int write_ppm( const char* path, const Frame* f )
 {
 	FILE* fp = fopen( path, "wb" );
 	if( !fp )
@@ -217,7 +253,7 @@ static int write_ppm( const char* path, const ResodoomFrame* f )
 	}
 	fprintf( fp, "P6\n%d %d\n255\n", RESODOOM_WIDTH, RESODOOM_HEIGHT );
 
-	/* ResodoomFrame is bottom-up BGRA, shaped for a texture upload. PPM is
+	/* Published frames are bottom-up BGRA, shaped for a texture upload. PPM is
 	   top-down RGB, so un-flip here and the file looks like the screen. */
 	for( int y = RESODOOM_HEIGHT - 1; y >= 0; --y )
 	{
@@ -240,7 +276,7 @@ typedef struct SeqWriter
 	int         index;
 } SeqWriter;
 
-static void seq_write( const ResodoomFrame* f, void* user )
+static void seq_write( const Frame* f, void* user )
 {
 	SeqWriter* w = (SeqWriter*)user;
 	char       path[ 1024 ];
@@ -250,7 +286,7 @@ static void seq_write( const ResodoomFrame* f, void* user )
 
 /* ------------------------------------------------------------------ */
 
-static void check_alpha_and_ink( const ResodoomFrame* f )
+static void check_alpha_and_ink( const Frame* f )
 {
 	int      opaque    = 1;
 	uint32_t seen[ 16 ];
@@ -275,7 +311,7 @@ static void check_alpha_and_ink( const ResodoomFrame* f )
 	}
 
 	/* The X in XRGB8888 is undefined and Doom leaves stale bits in it. Passed
-	   through, Resolume gets a mostly-transparent layer -- which on a dark
+	   through, Resolume gets a mostly-transparent layer -- which against a dark
 	   composition looks exactly like a plugin that does nothing. */
 	ok( opaque, "every pixel is opaque (the undefined X is forced to 255)" );
 
@@ -289,9 +325,9 @@ static int self_test( const char* enginePath, const char* iwad )
 	printf( "resotest: engine %s\n", enginePath );
 	printf( "resotest: iwad   %s\n\n", iwad );
 
-	ResodoomFrame* frame = (ResodoomFrame*)malloc( sizeof( ResodoomFrame ) );
-	uint64_t       digestA = 0;
-	uint32_t       ticA    = 0;
+	Frame*   frame   = (Frame*)malloc( sizeof( Frame ) );
+	uint64_t digestA = 0;
+	uint32_t ticA    = 0;
 
 	/* --- a private copy loads at all ------------------------------- */
 	EngineRef e;
@@ -302,18 +338,38 @@ static int self_test( const char* enginePath, const char* iwad )
 	}
 	ok( 1, "a private copy of the engine loads and its ABI matches" );
 
+	/* --- it describes itself the way the plugin expects ------------ */
+	{
+		StagehandInfo info;
+		memset( &info, 0, sizeof( info ) );
+		e.api->Describe( &info );
+
+		ok( info.width == RESODOOM_WIDTH && info.height == RESODOOM_HEIGHT,
+			"Describe reports Doom's geometry" );
+		ok( info.frameBytes == RESODOOM_BYTES, "...and its frame size" );
+		ok( info.rateNumerator == 35 && info.rateDenominator == 1,
+			"...and 35 Hz as an exact fraction" );
+
+		/*
+			Pixel aspect is WIDTH over HEIGHT, so Doom's is 5/6 and less than
+			one. The reciprocal is just as natural to write and gives a 1.92
+			display aspect -- a picture wider than 16:9, and every face in the
+			game stretched -- so the direction is asserted, not just the value.
+		*/
+		ok( info.pixelAspect > 0.83f && info.pixelAspect < 0.84f,
+			"...and a pixel aspect of 5/6, not its reciprocal" );
+	}
+
 	/* --- a bad start is refused, and does not burn the copy -------- */
 	{
-		ResodoomConfig bad = { 0 };
-		ok( e.api->Start( &bad ) != 0, "Start with no IWAD is refused" );
-		ok( e.api->State() == RESODOOM_FAILED, "...and the engine says FAILED" );
+		ok( e.api->Open( NULL, 0 ) != 0, "Open with no WAD is refused" );
+		ok( e.api->State() == STAGEHAND_FAILED, "...and the engine says FAILED" );
 		ok( e.api->Status() && e.api->Status()[ 0 ], "...with a message naming why" );
 	}
 
 	/* --- a real run ------------------------------------------------ */
 	{
-		ResodoomConfig cfg = base_config( iwad );
-		ok( e.api->Start( &cfg ) == 0, "Start with a real IWAD is accepted" );
+		ok( engine_start( &e, iwad, 0, 0, 0 ), "Open with a real WAD is accepted" );
 
 		int frames = run( e.api, 120, frame, NULL, NULL );
 		if( frames < 0 )
@@ -325,7 +381,7 @@ static int self_test( const char* enginePath, const char* iwad )
 			return 1;
 		}
 
-		ok( e.api->State() == RESODOOM_RUNNING, "the engine reaches RUNNING" );
+		ok( e.api->State() == STAGEHAND_RUNNING, "the engine reaches RUNNING" );
 		ok( frames == 120, "a frame arrives for every granted tic" );
 
 		/*
@@ -345,16 +401,15 @@ static int self_test( const char* enginePath, const char* iwad )
 
 	/* --- the same copy refuses a second run ------------------------ */
 	{
-		e.api->Stop();
-		ok( e.api->State() == RESODOOM_STOPPED, "Stop parks the engine at STOPPED" );
+		e.api->Close();
+		ok( e.api->State() == STAGEHAND_CLOSED, "Close parks the engine at CLOSED" );
 
-		ResodoomConfig cfg = base_config( iwad );
-		ok( e.api->Start( &cfg ) != 0,
-			"a second Start in the same loaded copy is refused" );
+		ok( !engine_start( &e, iwad, 0, 0, 0 ),
+			"a second Open in the same loaded copy is refused" );
 
 		/*
-			This is a real constraint stated as a test, not a limitation being
-			apologised for. Stop() frees every allocation but cannot put
+			A real constraint stated as a test, not a limitation being
+			apologised for. Close() frees every allocation but cannot put
 			doomgeneric's globals back, so a restarted copy would run partway
 			into D_DoomMain and then quietly produce nothing -- indistinguishable
 			from a bad WAD. Refusing it is what keeps that off the debugger.
@@ -373,9 +428,7 @@ static int self_test( const char* enginePath, const char* iwad )
 			return 1;
 		}
 		ok( 1, "a second private copy loads alongside the first" );
-
-		ResodoomConfig cfg = base_config( iwad );
-		ok( e2.api->Start( &cfg ) == 0, "the fresh copy starts" );
+		ok( engine_start( &e2, iwad, 0, 0, 0 ), "the fresh copy starts" );
 
 		int frames = run( e2.api, 120, frame, NULL, NULL );
 		ok( frames == 120, "and publishes the same number of frames" );
@@ -400,22 +453,21 @@ static int self_test( const char* enginePath, const char* iwad )
 			return 1;
 		}
 
-		ResodoomConfig cfg = base_config( iwad );
-		e3.api->Start( &cfg );
+		engine_start( &e3, iwad, 0, 0, 0 );
 		run( e3.api, 60, frame, NULL, NULL );
 		uint64_t before = digest( frame );
 
 		/* Escape opens the menu over whatever is on screen. It is the cheapest
 		   input whose effect shows in a pixel digest without depending on
 		   which WAD this is or what the demo happens to be doing. */
-		e3.api->Key( 27, 1 );
+		e3.api->Event( 27, 1 );
 		run( e3.api, 2, frame, NULL, NULL );
-		e3.api->Key( 27, 0 );
+		e3.api->Event( 27, 0 );
 		run( e3.api, 20, frame, NULL, NULL );
 
 		ok( digest( frame ) != before, "a queued key changes what the engine draws" );
 
-		e3.api->ReleaseAll();
+		e3.api->ReleaseInputs();
 		engine_close( &e3 );
 	}
 
@@ -485,21 +537,16 @@ int main( int argc, char** argv )
 	if( !engine_open( enginePath, &e ) )
 		return 1;
 
-	ResodoomConfig cfg = base_config( iwad );
-	cfg.episode        = episode;
-	cfg.map            = map;
-	cfg.skill          = skill;
-
-	if( e.api->Start( &cfg ) != 0 )
+	if( !engine_start( &e, iwad, skill, episode, map ) )
 	{
 		fprintf( stderr, "resotest: %s\n", e.api->Status() );
 		engine_close( &e );
 		return 1;
 	}
 
-	ResodoomFrame* frame  = (ResodoomFrame*)malloc( sizeof( ResodoomFrame ) );
-	SeqWriter      writer = { seqPrefix, 0 };
-	int            frames =
+	Frame*    frame  = (Frame*)malloc( sizeof( Frame ) );
+	SeqWriter writer = { seqPrefix, 0 };
+	int       frames =
 		run( e.api, tics, frame, seqPrefix ? seq_write : NULL, seqPrefix ? &writer : NULL );
 
 	if( frames < 0 )

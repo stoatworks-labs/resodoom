@@ -1,61 +1,67 @@
 #include "Plugin.h"
-#include "Diag.h"
 
-#include <algorithm>
+#include <stagehand/Diag.h>
+
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
 
 namespace resodoom
 {
 namespace
 {
 
-/*
-	One quad built from gl_VertexID -- no vertex buffer, same as the rest of the
-	fleet's shaders. `Scale` letterboxes it.
-
-	Mind the names: `filter`, `active`, `flat`, `input`, `output`, `sample`,
-	`common` and `patch` are GLSL reserved words, and a shader that fails to
-	compile surfaces only at runtime, as a plugin that appears to do nothing.
-	That is what Diag is for.
-*/
-const char* kVertexShader = R"(#version 410 core
-uniform vec2 Scale;
-
-out vec2 vUv;
-
-void main()
-{
-	// 0,1,2,3 -> the four corners of a triangle strip.
-	vec2 corner = vec2( float( gl_VertexID & 1 ), float( ( gl_VertexID >> 1 ) & 1 ) );
-
-	vUv         = corner;
-	gl_Position = vec4( ( corner * 2.0 - 1.0 ) * Scale, 0.0, 1.0 );
-}
-)";
-
-const char* kFragmentShader = R"(#version 410 core
-uniform sampler2D Picture;
-
-in vec2 vUv;
-out vec4 fragColour;
-
-void main()
-{
-	fragColour = vec4( texture( Picture, vUv ).rgb, 1.0 );
-}
-)";
+#if defined( _WIN32 )
+constexpr const char* kEngineLeaf = "resodoom_engine.dll";
+#elif defined( __APPLE__ )
+constexpr const char* kEngineLeaf = "libresodoom_engine.dylib";
+#else
+constexpr const char* kEngineLeaf = "libresodoom_engine.so";
+#endif
 
 } // namespace
 
+std::string ResodoomPlugin::EngineLibraryPath()
+{
+	const std::string dir = stagehand::BinaryDirectory();
+	if( dir.empty() )
+		return {};
+
+	std::error_code ec;
+
+	// Beside the plugin binary is where the build puts it, on every platform.
+	const std::string beside = dir + "/" + kEngineLeaf;
+	if( std::filesystem::exists( beside, ec ) )
+		return beside;
+
+	/*
+		A developer build runs the plugin straight out of the CMake build
+		directory, where the engine sits above the bundle's MacOS folder rather
+		than beside the binary. Looking there costs two stats and saves
+		installing on every rebuild.
+	*/
+	const std::string candidates[] = {
+		dir + "/../../../" + kEngineLeaf,
+		dir + "/../Resources/" + kEngineLeaf,
+	};
+	for( const std::string& candidate : candidates )
+		if( std::filesystem::exists( candidate, ec ) )
+			return std::filesystem::weakly_canonical( candidate, ec ).string();
+
+	return {};
+}
+
 ResodoomPlugin::ResodoomPlugin()
 {
+	stagehand::diag::Init( "Resodoom" );
+
 	/*
 		Doom writes its failures to stderr and then exits, from deep inside C
 		this plugin does not control. Inside Resolume that output goes nowhere,
 		and it is usually the only thing that names a bad WAD.
 	*/
-	diag::CaptureStderr();
-	diag::info( "plugin instantiated" );
+	stagehand::diag::CaptureStderr();
+	stagehand::diag::info( "plugin instantiated" );
 
 	SetMinInputs( 0 );
 	SetMaxInputs( 0 );
@@ -138,75 +144,53 @@ ResodoomPlugin::ResodoomPlugin()
 
 ResodoomPlugin::~ResodoomPlugin()
 {
-	diag::info( "plugin destroyed" );
+	stagehand::diag::info( "plugin destroyed" );
 }
 
 // ---------------------------------------------------------------------------
 // GL lifecycle
 // ---------------------------------------------------------------------------
 
-bool ResodoomPlugin::BuildShader()
-{
-	if( mShader.Compile( kVertexShader, kFragmentShader ) )
-		return true;
-
-	const GLubyte* vendor   = glGetString( GL_VENDOR );
-	const GLubyte* renderer = glGetString( GL_RENDERER );
-	const GLubyte* version  = glGetString( GL_VERSION );
-
-	// The GL strings go next to the failure because a shader that builds on one
-	// machine and not another is a driver answer, not a source answer.
-	diag::error( std::string( "shader compile failed on " )
-				 + ( vendor ? (const char*)vendor : "?" ) + " / "
-				 + ( renderer ? (const char*)renderer : "?" ) + " / "
-				 + ( version ? (const char*)version : "?" ) );
-	return false;
-}
-
 FFResult ResodoomPlugin::InitGL( const FFGLViewportStruct* vp )
 {
 	const GLubyte* version = glGetString( GL_VERSION );
-	diag::info( std::string( "InitGL, GL " )
-				+ ( version ? reinterpret_cast< const char* >( version ) : "unknown" ) );
+	stagehand::diag::info( std::string( "InitGL, GL " )
+						   + ( version ? reinterpret_cast< const char* >( version )
+									   : "unknown" ) );
 
-	if( !BuildShader() )
+	/*
+		The picture size comes from the engine, but the engine is not loaded
+		until a WAD is chosen -- and the shader has to exist before then, or
+		the first frame after choosing one is missed. Doom's geometry is fixed,
+		so the presenter is built at that size and the engine's Describe() is
+		checked against it when one does load.
+	*/
+	std::string error;
+	if( !mPresenter.Create( 320, 200, error ) )
 	{
+		// The GL strings go next to the failure because a shader that builds on
+		// one machine and not another is a driver answer, not a source answer.
+		const GLubyte* vendor   = glGetString( GL_VENDOR );
+		const GLubyte* renderer = glGetString( GL_RENDERER );
+		stagehand::diag::error( "presenter failed on "
+								+ std::string( vendor ? (const char*)vendor : "?" ) + " / "
+								+ ( renderer ? (const char*)renderer : "?" ) + ": " + error );
 		DeInitGL();
 		return FF_FAIL;
 	}
 
-	// A core profile refuses to draw with no vertex array bound, even though
-	// the shader builds its geometry from gl_VertexID and sources nothing.
-	glGenVertexArrays( 1, &mVAO );
-	glGenTextures( 1, &mTexture );
-
-	// One frame's worth of staging, allocated once. 256 KB is too much to put
-	// on the render thread's stack and too much to allocate per frame.
-	mFrame = std::make_unique< ResodoomFrame >();
-
+	mFrame.assign( size_t( 320 ) * 200 * 4, 0 );
 	mViewport = *vp;
 	return FF_SUCCESS;
 }
 
 FFResult ResodoomPlugin::DeInitGL()
 {
-	mEngine.Unload();
-	mShader.FreeGLResources();
+	mEngine.Close();
+	mPresenter.Destroy();
 
-	if( mVAO != 0 )
-	{
-		glDeleteVertexArrays( 1, &mVAO );
-		mVAO = 0;
-	}
-	if( mTexture != 0 )
-	{
-		glDeleteTextures( 1, &mTexture );
-		mTexture = 0;
-	}
-
-	mFrame.reset();
-	mTextureAllocated = false;
-	mUploadedSeq      = 0;
+	mFrame.clear();
+	mFrame.shrink_to_fit();
 	mLoadedIwad.clear();
 	mLoadedPwad.clear();
 
@@ -221,8 +205,7 @@ void ResodoomPlugin::ApplyPendingLoad()
 {
 	mPendingLoad = false;
 
-	mEngine.Unload();
-	mUploadedSeq = 0;
+	mEngine.Close();
 	std::memset( mButtonWasDown, 0, sizeof( mButtonWasDown ) );
 
 	mLoadedIwad = mIwad;
@@ -236,19 +219,30 @@ void ResodoomPlugin::ApplyPendingLoad()
 		return;
 	}
 
-	const int episode = OptionIndex( mParams[ PT_EPISODE ], 5 );
-	const int map     = OptionIndex( mParams[ PT_MAP ], 33 );
+	const std::string engine = EngineLibraryPath();
+	if( engine.empty() )
+	{
+		stagehand::diag::error( "the engine library is missing from the plugin bundle" );
+		mLoadFailed = true;
+		return;
+	}
 
-	ResodoomConfig cfg {};
-	cfg.iwad          = mIwad.c_str();
-	cfg.pwad          = mPwad.empty() ? nullptr : mPwad.c_str();
-	cfg.skill         = SkillFromParam( mParams[ PT_SKILL ] );
-	cfg.episode       = episode;
-	cfg.map           = map;
-	cfg.heapMiB       = 16;
-	cfg.deterministic = 0;
+	char skill[ 8 ], episode[ 8 ], map[ 8 ];
+	std::snprintf( skill, sizeof( skill ), "%d", SkillFromParam( mParams[ PT_SKILL ] ) );
+	std::snprintf( episode, sizeof( episode ), "%d", OptionIndex( mParams[ PT_EPISODE ], 5 ) );
+	std::snprintf( map, sizeof( map ), "%d", OptionIndex( mParams[ PT_MAP ], 33 ) );
 
-	if( !mEngine.Load( cfg ) )
+	std::vector< StagehandOption > options = {
+		{ "iwad", mIwad.c_str() },
+		{ "skill", skill },
+		{ "episode", episode },
+		{ "map", map },
+		{ "heap", "16" },
+	};
+	if( !mPwad.empty() )
+		options.push_back( { "pwad", mPwad.c_str() } );
+
+	if( !mEngine.Open( engine, options ) )
 	{
 		// Latched so the render thread does not rebuild a broken engine sixty
 		// times a second -- which would also stage sixty copies of the library
@@ -272,119 +266,13 @@ void ResodoomPlugin::SendInput()
 			continue;
 
 		mButtonWasDown[ p ] = down;
-		mEngine.Key( ButtonKey( p ), down );
+		mEngine.Event( ButtonKey( p ), down ? 1 : 0 );
 	}
 }
 
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
-
-bool ResodoomPlugin::UpdateTexture()
-{
-	glActiveTexture( GL_TEXTURE0 );
-	glBindTexture( GL_TEXTURE_2D, mTexture );
-
-	if( !mTextureAllocated )
-	{
-		glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, RESODOOM_WIDTH, RESODOOM_HEIGHT, 0,
-					  GL_BGRA, GL_UNSIGNED_BYTE, nullptr );
-
-		// CLAMP_TO_EDGE rather than the default REPEAT. The picture fills the
-		// texture exactly, so REPEAT would only show at the seam -- but it
-		// shows there as a one-pixel stripe of the opposite edge, which on a
-		// status bar is a bright line across the bottom of the screen.
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0 );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0 );
-
-		mTextureAllocated = true;
-		mUploadedSeq      = 0;
-	}
-
-	const GLint filter = mParams[ PT_SMOOTH ] >= 0.5f ? GL_LINEAR : GL_NEAREST;
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter );
-
-	/*
-		Only upload a frame that has not been uploaded. Doom runs at 35 Hz in a
-		composition running at 60, so five frames in twelve are repeats, and a
-		paused game repeats all of them.
-
-		GL_BGRA because that is the byte order Doom's XRGB8888 framebuffer
-		already has on a little-endian machine; the engine forces the alpha
-		byte to 255 as it copies, because the X is undefined and stale bits
-		there would give Resolume a transparent layer.
-	*/
-	if( mEngine.Frame( *mFrame ) )
-	{
-		glPixelStorei( GL_UNPACK_ALIGNMENT, 4 );
-		glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, RESODOOM_WIDTH, RESODOOM_HEIGHT,
-						 GL_BGRA, GL_UNSIGNED_BYTE, mFrame->pixels );
-		mUploadedSeq = mFrame->seq;
-	}
-
-	// Nothing has ever been uploaded: the engine is still starting up, and
-	// drawing the empty texture would flash black over the layer.
-	return mUploadedSeq != 0;
-}
-
-void ResodoomPlugin::ComputeQuadScale( int vpWidth, int vpHeight, float& sx, float& sy ) const
-{
-	sx = 1.0f;
-	sy = 1.0f;
-
-	if( vpWidth <= 0 || vpHeight <= 0 )
-		return;
-
-	const Scaling mode = ScalingFromParam( mParams[ PT_SCALING ] );
-	if( mode == Scaling::Stretch )
-		return;
-
-	if( mode == Scaling::Integer )
-	{
-		/*
-			Whole-number pixel multiples only. Aspect correction is deliberately
-			ignored here: the entire point of this mode is that one Doom pixel
-			is an exact square block of output pixels, and a 1.2 correction
-			makes that impossible by definition.
-		*/
-		const int kx = vpWidth / RESODOOM_WIDTH;
-		const int ky = vpHeight / RESODOOM_HEIGHT;
-		const int k  = std::max( 1, std::min( kx, ky ) );
-
-		sx = float( RESODOOM_WIDTH * k ) / float( vpWidth );
-		sy = float( RESODOOM_HEIGHT * k ) / float( vpHeight );
-
-		// A picture larger than the composition cannot be shown at 1x or more;
-		// fall through to fitting rather than overflowing silently.
-		if( sx <= 1.0f && sy <= 1.0f )
-			return;
-	}
-
-	/*
-		Doom's 320x200 was always displayed at 4:3 -- its pixels are 1.2 times
-		taller than wide. Square pixels are an option rather than the default
-		because some people want the raw buffer, but they are not what the game
-		looked like.
-	*/
-	const float pictureAspect = mParams[ PT_PIXEL_ASPECT ] >= 0.5f
-									? 4.0f / 3.0f
-									: float( RESODOOM_WIDTH ) / float( RESODOOM_HEIGHT );
-
-	const float viewAspect = float( vpWidth ) / float( vpHeight );
-
-	const bool wider = pictureAspect > viewAspect;
-	const bool fill  = mode == Scaling::Fill;
-
-	// Fit shrinks the long axis to bring the whole picture in; Fill grows the
-	// short one until nothing is uncovered. Same comparison, opposite branch.
-	if( wider != fill )
-		sy = viewAspect / pictureAspect;
-	else
-		sx = pictureAspect / viewAspect;
-}
 
 FFResult ResodoomPlugin::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 {
@@ -407,25 +295,30 @@ FFResult ResodoomPlugin::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 		stands -- the engine blocks on its budget rather than spinning, so a
 		paused layer costs nothing at all.
 	*/
-	const float speed = mParams[ PT_RUN ] >= 0.5f ? SpeedFromParam( mParams[ PT_SPEED ] ) : 0.0f;
+	const float speed =
+		mParams[ PT_RUN ] >= 0.5f ? SpeedFromParam( mParams[ PT_SPEED ] ) : 0.0f;
 	mEngine.Pump( speed );
 
 	/*
-		Doom can fail after a successful start, and usually does when it fails
-		at all: Load() only reports that the engine thread came up, and the WAD
+		Doom can fail after a successful open, and usually does when it fails
+		at all: Open() only reports that the engine thread came up, and the WAD
 		is found, read and rejected on that thread a moment later. Without this
-		the log says "engine thread up" and then goes quiet, and the operator
-		has a black layer with no entry naming the cause.
-
-		Latching also stops the engine being rebuilt sixty times a second.
+		the log says "source open" and then goes quiet, and the operator has a
+		black layer with no entry naming the cause.
 	*/
 	if( !mLoadFailed && mEngine.Failed() )
 	{
 		mLoadFailed = true;
-		diag::error( "the engine gave up after starting: " + mEngine.EngineStatus() );
+		stagehand::diag::error( "the engine gave up after starting: "
+								+ mEngine.SourceStatus() );
 	}
 
-	if( !UpdateTexture() )
+	if( !mFrame.empty() && mEngine.Frame( mFrame.data(), mFrame.size() ) )
+		mPresenter.Upload( mFrame.data() );
+
+	mPresenter.SetSmoothing( mParams[ PT_SMOOTH ] >= 0.5f );
+
+	if( !mPresenter.HasPicture() )
 	{
 		/*
 			No WAD, or the engine has not produced its first frame yet. Leave
@@ -436,30 +329,17 @@ FFResult ResodoomPlugin::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 		return FF_SUCCESS;
 	}
 
+	// Pixel Aspect off means square pixels, which is not what the game looked
+	// like but is what somebody asking for the raw buffer wants.
+	const float par = mParams[ PT_PIXEL_ASPECT ] >= 0.5f
+						  ? mEngine.Info().pixelAspect
+						  : 1.0f;
+
 	float sx = 1.0f, sy = 1.0f;
-	ComputeQuadScale( width, height, sx, sy );
+	stagehand::ComputeFit( FitFromParam( mParams[ PT_SCALING ] ), width, height, 320, 200,
+						   par, sx, sy );
 
-	// Plain glUseProgram and glBindTexture rather than the ffglex Scoped*
-	// helpers: every one of those CLEARS its binding to 0 on scope exit instead
-	// of restoring what was there. State is put back by hand below.
-	glBindVertexArray( mVAO );
-	glUseProgram( mShader.GetGLID() );
-
-	glActiveTexture( GL_TEXTURE0 );
-	glBindTexture( GL_TEXTURE_2D, mTexture );
-
-	mShader.Set( "Picture", 0 );
-	mShader.Set( "Scale", sx, sy );
-
-	glDisable( GL_BLEND );
-	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
-
-	glUseProgram( 0 );
-	glBindVertexArray( 0 );
-	glBindTexture( GL_TEXTURE_2D, 0 );
-	glEnable( GL_BLEND );
-	glBlendFunc( GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
-
+	mPresenter.Draw( sx, sy );
 	return FF_SUCCESS;
 }
 
