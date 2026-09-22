@@ -9,6 +9,7 @@
 	  resotest --iwad W.wad --check          the self-test
 	  resotest --iwad W.wad --tics 200 --out /tmp/f.ppm
 	  resotest --iwad W.wad --tics 400 --seq /tmp/f_     a PPM per frame
+	  resotest --iwad W.wad --tics 35 --menu --out /tmp/m.ppm    the main menu
 
 	Every run here sets the `deterministic` option, which freezes the engine's
 	only link to real time. Two cold runs are then byte-identical and a pixel
@@ -594,7 +595,7 @@ static void usage( void )
 	fprintf( stderr,
 			 "usage: resotest --iwad PATH [--check]\n"
 			 "                [--tics N] [--out FILE.ppm] [--seq PREFIX]\n"
-			 "                [--engine PATH] [--warp E M] [--skill N]\n" );
+			 "                [--engine PATH] [--warp E M] [--skill N] [--menu]\n" );
 }
 
 int main( int argc, char** argv )
@@ -605,6 +606,7 @@ int main( int argc, char** argv )
 	const char* seqPrefix  = NULL;
 	int         tics       = 100;
 	int         doCheck    = 0;
+	int         openMenu   = 0;
 	int         episode = 0, map = 0, skill = 0;
 
 	for( int i = 1; i < argc; ++i )
@@ -623,6 +625,8 @@ int main( int argc, char** argv )
 			tics = atoi( argv[ ++i ] );
 		else if( !strcmp( argv[ i ], "--skill" ) && i + 1 < argc )
 			skill = atoi( argv[ ++i ] );
+		else if( !strcmp( argv[ i ], "--menu" ) )
+			openMenu = 1;
 		else if( !strcmp( argv[ i ], "--warp" ) && i + 2 < argc )
 		{
 			episode = atoi( argv[ ++i ] );
@@ -665,6 +669,28 @@ int main( int argc, char** argv )
 		free( frame );
 		engine_close( &e );
 		return 1;
+	}
+
+	/*
+		Open Doom's main menu over whatever is on screen, then let it settle.
+
+		The only way to look at the menu layer without a controller -- and the
+		menu is 320-wide artwork positioned in 320-wide coordinates, so it is
+		exactly what a non-classic build needs looking at. Same sequence as
+		the self-test's key check: down, a couple of tics, up, then enough
+		tics for the skull cursor to be drawn.
+	*/
+	if( openMenu )
+	{
+		e.api->Event( 27, 1 );
+		run( e.api, 2, frame, NULL, NULL );
+		e.api->Event( 27, 0 );
+		if( run( e.api, 20, frame, NULL, NULL ) < 0 )
+		{
+			free( frame );
+			engine_close( &e );
+			return 1;
+		}
 	}
 
 	printf( "resotest: %d frames, last seq %u, tic %u\n", frames, frame->seq, frame->tic );
