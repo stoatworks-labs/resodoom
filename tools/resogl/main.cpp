@@ -21,13 +21,19 @@
 	software GL beside the executable and it will be picked up ahead of the
 	system one. Mesa's llvmpipe is what Resolume itself ships for that case.
 */
-#include "Plugin.h"
+/*
+	**On Windows this block must come before Plugin.h and that is load-bearing.**
+	FFGL.h defines NOUSER before it includes windows.h, which drops winuser.h
+	-- and with it WNDCLASSA, CreateWindowExA and GetDC, every one of which
+	this file needs to make a context. It #undefs NOUSER afterwards, but by
+	then windows.h has tripped its own include guard and a second #include is
+	a no-op, so winuser.h never arrives at all. Getting in first is the only
+	order that works.
 
-#if defined( __APPLE__ )
-	#include <OpenGL/CGLCurrent.h>
-	#include <OpenGL/CGLTypes.h>
-	#include <OpenGL/OpenGL.h>
-#elif defined( _WIN32 )
+	GL/glew.h before any GL header for the usual reason: the system opengl32
+	exports GL 1.1, and everything this harness draws with is an extension.
+*/
+#if defined( _WIN32 )
 	#ifndef WIN32_LEAN_AND_MEAN
 		#define WIN32_LEAN_AND_MEAN
 	#endif
@@ -35,11 +41,17 @@
 		#define NOMINMAX
 	#endif
 	#include <windows.h>
-	// After windows.h, and GL/glew.h before any GL call: on Windows the system
-	// opengl32 exports GL 1.1 and everything this harness draws with arrives
-	// through an extension pointer.
+
 	#include <GL/glew.h>
 	#include <GL/wglew.h>
+#endif
+
+#include "Plugin.h"
+
+#if defined( __APPLE__ )
+	#include <OpenGL/CGLCurrent.h>
+	#include <OpenGL/CGLTypes.h>
+	#include <OpenGL/OpenGL.h>
 #endif
 
 #include <chrono>
