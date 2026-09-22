@@ -273,6 +273,13 @@ and **skips loudly** rather than quietly passing without one.
   matter. At a non-classic width there is a third case — picture and frame
   already the same aspect, bars on neither axis — and the Fit assertions take
   the engine's geometry from CMake so they stay honest at any width.
+  **The Fit checks measure the presented quad, not the art, and that only
+  works because Doom never emits pure black.** `gammatable[0]` starts at 1, so
+  palette black leaves the engine as (1,1,1) and counts as ink. On a
+  widescreen title page the art ends three-quarters of the way across and the
+  rest is that near-black, which is why ink reads 0.998 there — the buffer is
+  edge to edge, even though the picture in it is not. `--check --out F.ppm`
+  writes the exact frame the Fit checks measured.
 - **The symbol checks** — that the engine exports exactly one entry point and
   none of doomgeneric's internals, that the bundle exports `plugMain`, and that
   the engine was actually staged inside the bundle. A bundle missing the engine
