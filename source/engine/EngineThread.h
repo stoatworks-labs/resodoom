@@ -42,7 +42,21 @@
 		Include this AFTER EngineImpl.c has undone the allocator hooks. The
 		force-included header turns `malloc` and friends into macros, and
 		windows.h is large enough to trip over one.
+
+		**WIN32_LEAN_AND_MEAN is not a compile-time saving here, it is what
+		makes the file compile at all.** It drops the RPC and OLE headers, and
+		those are where the SDK declares `boolean` and `BOOLEAN` -- as
+		`unsigned char`, against Doom's own enum of the same name in
+		doomtype.h. Without it every translation unit that sees both gets
+		"redefinition; different basic types" from a Windows header, naming
+		nothing that belongs to this project.
 	*/
+	#ifndef WIN32_LEAN_AND_MEAN
+		#define WIN32_LEAN_AND_MEAN
+	#endif
+	#ifndef NOMINMAX
+		#define NOMINMAX
+	#endif
 	#include <windows.h>
 	#include <process.h>
 
