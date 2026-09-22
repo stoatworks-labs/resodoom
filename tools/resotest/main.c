@@ -10,6 +10,8 @@
 	  resotest --iwad W.wad --tics 200 --out /tmp/f.ppm
 	  resotest --iwad W.wad --tics 400 --seq /tmp/f_     a PPM per frame
 	  resotest --iwad W.wad --tics 35 --menu --out /tmp/m.ppm    the main menu
+	  resotest --iwad W.wad --warp 1 1 --keys 27,175,175,175,175,13 --out /tmp/h.ppm
+	                                         Read This! over a level
 
 	Every run here sets the `deterministic` option, which freezes the engine's
 	only link to real time. Two cold runs are then byte-identical and a pixel
@@ -595,7 +597,8 @@ static void usage( void )
 	fprintf( stderr,
 			 "usage: resotest --iwad PATH [--check]\n"
 			 "                [--tics N] [--out FILE.ppm] [--seq PREFIX]\n"
-			 "                [--engine PATH] [--warp E M] [--skill N] [--menu]\n" );
+			 "                [--engine PATH] [--warp E M] [--skill N]\n"
+			 "                [--menu] [--keys CODE,CODE,...]\n" );
 }
 
 int main( int argc, char** argv )
@@ -606,7 +609,8 @@ int main( int argc, char** argv )
 	const char* seqPrefix  = NULL;
 	int         tics       = 100;
 	int         doCheck    = 0;
-	int         openMenu   = 0;
+	int         keys[ 32 ];
+	int         keyCount   = 0;
 	int         episode = 0, map = 0, skill = 0;
 
 	for( int i = 1; i < argc; ++i )
@@ -626,7 +630,17 @@ int main( int argc, char** argv )
 		else if( !strcmp( argv[ i ], "--skill" ) && i + 1 < argc )
 			skill = atoi( argv[ ++i ] );
 		else if( !strcmp( argv[ i ], "--menu" ) )
-			openMenu = 1;
+		{
+			if( keyCount < 32 )
+				keys[ keyCount++ ] = 27;
+		}
+		else if( !strcmp( argv[ i ], "--keys" ) && i + 1 < argc )
+		{
+			/* Comma-separated doomkeys.h codes, pressed in order. */
+			for( char* tok = strtok( argv[ ++i ], "," ); tok && keyCount < 32;
+				 tok = strtok( NULL, "," ) )
+				keys[ keyCount++ ] = atoi( tok );
+		}
 		else if( !strcmp( argv[ i ], "--warp" ) && i + 2 < argc )
 		{
 			episode = atoi( argv[ ++i ] );
@@ -672,25 +686,37 @@ int main( int argc, char** argv )
 	}
 
 	/*
-		Open Doom's main menu over whatever is on screen, then let it settle.
+		Press keys over whatever is on screen, then let it settle.
 
-		The only way to look at the menu layer without a controller -- and the
-		menu is 320-wide artwork positioned in 320-wide coordinates, so it is
-		exactly what a non-classic build needs looking at. Same sequence as
-		the self-test's key check: down, a couple of tics, up, then enough
-		tics for the skull cursor to be drawn.
+		The only way to look at the menu layer -- or anything reached THROUGH
+		it, like the help screens -- without a controller. The menu is 320-wide
+		artwork positioned in 320-wide coordinates, so it is exactly what a
+		non-classic build needs looking at. Each key is the self-test's
+		sequence: down, a couple of tics, up, a few more for Doom to act on it;
+		then enough tics at the end for the skull cursor to be drawn.
+
+		--menu is --keys 27. Codes are doomkeys.h: 13 Enter, 27 Escape,
+		173/175 up/down arrow.
+
+		The settle tics go BETWEEN keys only, so a single key keeps exactly
+		the sequence --menu always had. That is load-bearing for comparing
+		frames across builds: the skull cursor alternates every 8 tics, and
+		three extra tics would change a menu frame for a reason unrelated to
+		whatever is being compared.
 	*/
-	if( openMenu )
+	for( int k = 0; k < keyCount; ++k )
 	{
-		e.api->Event( 27, 1 );
+		e.api->Event( keys[ k ], 1 );
 		run( e.api, 2, frame, NULL, NULL );
-		e.api->Event( 27, 0 );
-		if( run( e.api, 20, frame, NULL, NULL ) < 0 )
-		{
-			free( frame );
-			engine_close( &e );
-			return 1;
-		}
+		e.api->Event( keys[ k ], 0 );
+		if( k + 1 < keyCount )
+			run( e.api, 3, frame, NULL, NULL );
+	}
+	if( keyCount > 0 && run( e.api, 20, frame, NULL, NULL ) < 0 )
+	{
+		free( frame );
+		engine_close( &e );
+		return 1;
 	}
 
 	printf( "resotest: %d frames, last seq %u, tic %u\n", frames, frame->seq, frame->tic );
