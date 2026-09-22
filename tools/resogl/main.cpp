@@ -1,6 +1,6 @@
 /*
 	resogl -- the real plugin class, through the real FFGL sequence, in a
-	headless CGL 4.1 core-profile context.
+	headless 4.1 core-profile context.
 
 	This is the only check that catches a shader that will not compile, a
 	uniform whose name does not match the GLSL, or a letterbox branch that has
@@ -10,6 +10,7 @@
 	  resogl --iwad W.wad --check
 	  resogl --iwad W.wad --check --size 720x720
 	  resogl --iwad W.wad --out /tmp/f.ppm
+	  resogl --iwad W.wad --check --out /tmp/fitted.ppm    the frame Fit is measured on
 
 	Everything here is portable except getting a context, which nothing has
 	ever made portable: CGL on macOS, WGL behind a hidden window on Windows.
@@ -442,7 +443,8 @@ bool Bring( ResodoomPlugin& plugin, const FFGLViewportStruct& vp, const std::str
 	return true;
 }
 
-int SelfTest( const std::string& iwad, unsigned width, unsigned height )
+int SelfTest( const std::string& iwad, unsigned width, unsigned height,
+			  const std::string& dumpFitted )
 {
 	std::printf( "resogl: %ux%u\n", width, height );
 	std::printf( "resogl: iwad %s\n\n", iwad.c_str() );
@@ -492,6 +494,16 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height )
 		ok( Bring( plugin, vp, iwad ), "InitGL and a real WAD path are accepted" );
 
 		fitted = DrawUntilPicture( plugin, target );
+
+		/*
+			The frame every Fit assertion below is measured against. Written
+			out on request because a pass here says only that non-black pixels
+			reached the edges -- not what they were. A widescreen title page
+			is 320-wide art in a wider buffer, and whether its uncovered strip
+			is black or stale memory decides the measurement.
+		*/
+		if( !dumpFitted.empty() )
+			WritePpm( dumpFitted.c_str(), fitted, width, height );
 		ok( !IsBlank( fitted ), "the game reaches the screen" );
 
 		/*
@@ -711,7 +723,7 @@ int main( int argc, char** argv )
 	int rc = 0;
 	if( doCheck )
 	{
-		rc = SelfTest( iwad, width, height );
+		rc = SelfTest( iwad, width, height, out );
 	}
 	else
 	{
