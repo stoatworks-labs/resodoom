@@ -21,15 +21,18 @@ option( RESODOOM_BUILD_TOOLS  "Build the verification tools" ON )
 #
 #     320 -> 4:3      384 -> 16:10      426 -> 16:9      568 -> 21:9
 #
-# **A wider buffer on its own is not widescreen.** Doom's horizontal FOV is
-# pinned at 90 degrees and its vertical scale is derived from half the buffer
-# width (`projection = centerxfrac` in r_main.c), so widening this zooms in
-# and crops the top and bottom rather than showing more to the sides. The 2D
-# layer does not move either: the status bar is one 320-wide patch drawn at
-# x=0. Both are the renderer patch, which is not done -- see AGENTS.md.
+# **A wider buffer on its own would not be widescreen.** Doom's horizontal FOV
+# is pinned at 90 degrees and its scale is derived from half the buffer width
+# (`projection = centerxfrac`), so widening alone zooms in and crops the top
+# and bottom. patches/0001 holds the projection at its 320-wide value, which
+# turns the extra columns into extra angle: 106 degrees across at 426, the
+# vertical field unchanged. patches/0002 keeps the view at size 11, the only
+# size that is safe in a wider buffer. See AGENTS.md for both.
 #
-# What this knob IS good for today is proving that everything downstream of
-# the engine carries a non-320x200 picture correctly.
+# **The 2D layer is still 320 wide, at the left.** The title and credit pages,
+# menus, intermission and finale are 320-wide artwork drawn at 320-relative
+# positions, so at any other width they sit against the left edge. The 3D view
+# is right; the screens around it are not yet.
 # ---------------------------------------------------------------------------
 set( RESODOOM_SCREEN_WIDTH  320 CACHE STRING "Doom's render width in pixels." )
 set( RESODOOM_SCREEN_HEIGHT 200 CACHE STRING "Doom's render height in pixels." )
@@ -100,11 +103,25 @@ endif()
 # ---------------------------------------------------------------------------
 find_package( Git REQUIRED )
 
-file( GLOB RESODOOM_PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches/*.patch )
+# CONFIGURE_DEPENDS, or a NEW patch is invisible: a plain GLOB is evaluated once
+# at configure time, so a file added afterwards is not in the list, is not a
+# dependency, and is silently never applied -- the build reports success and the
+# change is simply absent until somebody happens to reconfigure.
+file( GLOB RESODOOM_PATCHES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/patches/*.patch )
 list( SORT RESODOOM_PATCHES )
 
 set( DG_PATCHED ${CMAKE_CURRENT_BINARY_DIR}/doomgeneric-patched )
 set( DG_STAMP   ${CMAKE_CURRENT_BINARY_DIR}/doomgeneric-patched.stamp )
+
+# The patch SET, as a file whose timestamp only moves when the set does. The
+# stamp below depends on each patch's contents, which catches an edited or an
+# added patch -- but a DELETED patch is simply no longer a dependency, nothing
+# looks out of date, and its changes stay in the build tree indefinitely.
+# file(CONFIGURE) rewrites only when the content differs, so an unchanged set
+# costs nothing.
+set( DG_PATCH_LIST ${CMAKE_CURRENT_BINARY_DIR}/doomgeneric-patches.txt )
+string( JOIN "\n" DG_PATCH_LIST_CONTENT ${RESODOOM_PATCHES} )
+file( CONFIGURE OUTPUT ${DG_PATCH_LIST} CONTENT "${DG_PATCH_LIST_CONTENT}\n" @ONLY )
 
 # Rebuilt from scratch whenever a patch changes, because `git apply` is not
 # idempotent -- re-running it over an already-patched tree fails rather than
@@ -131,7 +148,7 @@ add_custom_command(
 	${DG_PATCH_COMMANDS}
 	COMMAND ${CMAKE_COMMAND} -E touch ${DG_STAMP}
 	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-	DEPENDS ${RESODOOM_PATCHES}
+	DEPENDS ${RESODOOM_PATCHES} ${DG_PATCH_LIST}
 	COMMENT "Patching doomgeneric into the build tree"
 	VERBATIM
 )
