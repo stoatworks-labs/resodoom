@@ -71,20 +71,26 @@ int g_checks   = 0;
 int g_failures = 0;
 
 /*
-	What the engine this harness links against was built to produce. From
-	CMake, so the Fit assertions below stay correct at any width rather than
-	quietly testing 4:3 against a 16:9 picture.
+	The checks that predate the Aspect parameter pin it to 4:3, so they test
+	exactly what they always did -- the classic engine -- whatever canvas they
+	run on. The Aspect block below is where the other engines are exercised.
 */
-#ifndef RESODOOM_SCREEN_WIDTH
-	#define RESODOOM_SCREEN_WIDTH 320
-#endif
-#ifndef RESODOOM_SCREEN_HEIGHT
-	#define RESODOOM_SCREEN_HEIGHT 200
-#endif
-
-constexpr int   kEngineWidth     = RESODOOM_SCREEN_WIDTH;
-constexpr int   kEngineHeight    = RESODOOM_SCREEN_HEIGHT;
+constexpr int   kEngineWidth     = int( resodoom::kClassicEngineWidth );
+constexpr int   kEngineHeight    = int( resodoom::kEngineHeight );
 constexpr float kDoomPixelAspect = 5.0f / 6.0f;
+constexpr float kAspectClassic   = 1.0f; ///< PT_ASPECT's 4:3 element; 0 is Auto
+
+/// Where Fit should put the picture of an engine this wide on a canvas this
+/// shape: the share of each axis it covers. How the Aspect checks tell which
+/// engine is running without reaching into the plugin.
+void ExpectedFitCover( uint32_t engineWidth, unsigned canvasW, unsigned canvasH,
+					   float& coverX, float& coverY )
+{
+	const float picture = resodoom::EngineDisplayAspect( engineWidth );
+	const float canvas  = float( canvasW ) / float( canvasH );
+	coverX = picture < canvas ? picture / canvas : 1.0f;
+	coverY = picture > canvas ? canvas / picture : 1.0f;
+}
 
 void ok( bool condition, const char* what )
 {
@@ -307,6 +313,14 @@ Target MakeTarget( unsigned width, unsigned height )
 	return t;
 }
 
+void DestroyTarget( Target& t )
+{
+	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+	glDeleteFramebuffers( 1, &t.fbo );
+	glDeleteTextures( 1, &t.colour );
+	t = Target {};
+}
+
 std::vector< uint8_t > DrawOnce( ResodoomPlugin& plugin, const Target& target )
 {
 	glBindFramebuffer( GL_FRAMEBUFFER, target.fbo );
@@ -491,6 +505,7 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 	std::vector< uint8_t > fitted;
 	{
 		ResodoomPlugin plugin;
+		plugin.SetFloatParameter( resodoom::PT_ASPECT, kAspectClassic );
 		ok( Bring( plugin, vp, iwad ), "InitGL and a real WAD path are accepted" );
 
 		fitted = DrawUntilPicture( plugin, target );
@@ -624,6 +639,8 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 			outright -- so `b` would draw nothing at all.
 		*/
 		ResodoomPlugin a, b;
+		a.SetFloatParameter( resodoom::PT_ASPECT, kAspectClassic );
+		b.SetFloatParameter( resodoom::PT_ASPECT, kAspectClassic );
 		a.SetFloatParameter( resodoom::PT_EPISODE, 1.0f );
 		a.SetFloatParameter( resodoom::PT_MAP, 1.0f );
 		b.SetFloatParameter( resodoom::PT_EPISODE, 1.0f );
@@ -641,6 +658,111 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 
 		a.DeInitGL();
 		b.DeInitGL();
+	}
+
+	/* --- Aspect picks the engine ----------------------------------- */
+	{
+		/*
+			Auto against one canvas per engine, then a fixed choice that must
+			override Auto, then a change of Aspect on a running layer.
+
+			Which engine is running is read from OUTSIDE, by the shape Fit
+			gives its picture: each engine's picture has a different aspect,
+			so the ink extents name the engine without the harness reaching
+			into the plugin. The canvases are small because only their shape
+			matters. Ink counts Doom's (1,1,1) black, so a title page's
+			pillarbox reads as picture -- which is right: it is the buffer's
+			extent being measured, not the art's.
+		*/
+		auto near = []( float a, float b ) { return a > b - 0.02f && a < b + 0.02f; };
+
+		struct Case
+		{
+			unsigned    w, h;
+			float       aspect;  // PT_ASPECT: 0 Auto, 1..4 fixed
+			uint32_t    engine;  // the width that should be running
+			const char* what;
+		};
+		const Case cases[] = {
+			{ 480, 480, 0.0f, 320, "Auto on a square canvas runs the 4:3 engine" },
+			{ 640, 400, 0.0f, 384, "Auto on a 16:10 canvas runs the 16:10 engine" },
+			{ 640, 360, 0.0f, 426, "Auto on a 16:9 canvas runs the 16:9 engine" },
+			{ 840, 360, 0.0f, 568, "Auto on a 21:9 canvas runs the 21:9 engine" },
+			{ 480, 480, 3.0f, 426, "a fixed 16:9 overrides Auto on a square canvas" },
+		};
+
+		for( const Case& c : cases )
+		{
+			Target             t   = MakeTarget( c.w, c.h );
+			FFGLViewportStruct cvp { 0, 0, c.w, c.h };
+
+			ResodoomPlugin plugin;
+			plugin.SetFloatParameter( resodoom::PT_ASPECT, c.aspect );
+			Bring( plugin, cvp, iwad );
+
+			auto  rgba = DrawUntilPicture( plugin, t );
+			float gotX = 0.0f, gotY = 0.0f, wantX = 0.0f, wantY = 0.0f;
+			InkExtent( rgba, c.w, c.h, gotX, gotY );
+			ExpectedFitCover( c.engine, c.w, c.h, wantX, wantY );
+
+			std::printf( "  ....  %ux%u canvas: ink %.3f x %.3f; the %u engine gives %.3f x %.3f\n",
+						 c.w, c.h, gotX, gotY, c.engine, wantX, wantY );
+			ok( near( gotX, wantX ) && near( gotY, wantY ), c.what );
+
+			plugin.DeInitGL();
+			DestroyTarget( t );
+		}
+
+		/*
+			On a running layer: choosing the aspect it already has changes
+			nothing, and choosing another swaps the engine.
+
+			The first is the one that matters mid-show -- Resolume re-sends
+			every value on composition load and on undo, and a restart there
+			would dump the operator back at the title page. It is caught the
+			only way a restart shows from outside: the picture going BACK to
+			the title page it started on, after the game had moved on.
+		*/
+		{
+			Target             t   = MakeTarget( 640, 360 );
+			FFGLViewportStruct cvp { 0, 0, 640, 360 };
+
+			ResodoomPlugin plugin; // Auto, which on 16:9 is the 426 engine
+			Bring( plugin, cvp, iwad );
+			const auto title = DrawUntilPicture( plugin, t );
+
+			plugin.SetFloatParameter( resodoom::PT_SPEED, 1.0f );
+			const bool moving = AdvanceUntilMoving( plugin, t );
+			plugin.SetFloatParameter( resodoom::PT_SPEED, 0.5f );
+
+			plugin.SetFloatParameter( resodoom::PT_ASPECT, 3.0f ); // 16:9: the same engine
+			bool backAtTitle = false;
+			for( int i = 0; i < 40 && !backAtTitle; ++i )
+			{
+				std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+				backAtTitle = DrawOnce( plugin, t ) == title;
+			}
+			ok( moving && !backAtTitle,
+				"choosing the aspect a layer already runs does not restart the game" );
+
+			plugin.SetFloatParameter( resodoom::PT_ASPECT, kAspectClassic );
+			std::vector< uint8_t > rgba;
+			float gotX = 0.0f, gotY = 0.0f, wantX = 0.0f, wantY = 0.0f;
+			ExpectedFitCover( resodoom::kClassicEngineWidth, 640, 360, wantX, wantY );
+			for( int i = 0; i < 2000; ++i )
+			{
+				rgba = DrawOnce( plugin, t );
+				InkExtent( rgba, 640, 360, gotX, gotY );
+				if( !IsBlank( rgba ) && near( gotX, wantX ) && near( gotY, wantY ) )
+					break;
+				std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+			}
+			ok( near( gotX, wantX ) && near( gotY, wantY ),
+				"choosing another aspect on a running layer swaps the engine" );
+
+			plugin.DeInitGL();
+			DestroyTarget( t );
+		}
 	}
 
 	std::printf( "\nresogl: %d checks, %d failures\n", g_checks, g_failures );

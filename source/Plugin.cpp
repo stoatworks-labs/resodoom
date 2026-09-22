@@ -11,13 +11,26 @@ namespace resodoom
 namespace
 {
 
+/*
+	An engine's file name. The 320 one keeps the historical name so everything
+	that already looks for it still finds it; the others carry their width:
+	libresodoom_engine_426.dylib. These are CMake's target names, so the two
+	cannot disagree without the build noticing first.
+*/
+std::string EngineLeaf( uint32_t width )
+{
 #if defined( _WIN32 )
-constexpr const char* kEngineLeaf = "resodoom_engine.dll";
+	const std::string prefix = "", suffix = ".dll";
 #elif defined( __APPLE__ )
-constexpr const char* kEngineLeaf = "libresodoom_engine.dylib";
+	const std::string prefix = "lib", suffix = ".dylib";
 #else
-constexpr const char* kEngineLeaf = "libresodoom_engine.so";
+	const std::string prefix = "lib", suffix = ".so";
 #endif
+	std::string name = prefix + "resodoom_engine";
+	if( width != kClassicEngineWidth )
+		name += "_" + std::to_string( width );
+	return name + suffix;
+}
 
 /*
 	What the presenter stands by at before any engine exists.
@@ -33,11 +46,13 @@ constexpr uint32_t kStandbyHeight = 200;
 
 } // namespace
 
-std::string ResodoomPlugin::EngineLibraryPath()
+std::string ResodoomPlugin::EngineLibraryPath( uint32_t width )
 {
 	const std::string dir = stagehand::BinaryDirectory();
 	if( dir.empty() )
 		return {};
+
+	const std::string kEngineLeaf = EngineLeaf( width );
 
 	std::error_code ec;
 
@@ -156,6 +171,24 @@ ResodoomPlugin::ResodoomPlugin()
 	}
 
 	/*
+		Which engine to run. Doom's picture width is fixed when the engine is
+		compiled, so each aspect is a separate engine in the bundle and choosing
+		one restarts the game -- but only a choice that changes the ENGINE does.
+		Auto picks the closest to the canvas, which on the usual 16:9 output
+		means true widescreen: the same view height, more to either side.
+
+		Auto by default. On a 16:9 canvas that changes what an older composition
+		shows -- a wider view where there were pillarboxes -- and that is the
+		point of the parameter; 4:3 is one click away for anyone who wants the
+		original back.
+	*/
+	SetOptionParamInfo( PT_ASPECT, "Aspect", kEngineAspectCount + 1, 0.0f );
+	SetParamElementInfo( PT_ASPECT, 0, "Auto", 0.0f );
+	for( int i = 0; i < kEngineAspectCount; ++i )
+		SetParamElementInfo( PT_ASPECT, unsigned( i + 1 ), kEngineAspects[ i ].label,
+							 float( i + 1 ) );
+
+	/*
 		The About block. Declared inline rather than through a helper, because
 		SetParamInfo is protected on CFFGLPlugin and nothing outside the class
 		can call it.
@@ -205,6 +238,23 @@ FFResult ResodoomPlugin::InitGL( const FFGLViewportStruct* vp )
 	}
 
 	mViewport = *vp;
+
+	/*
+		A WAD already chosen means this is a RE-initialisation, and the engine
+		has to come back. DeInitGL closed it, and nothing else would reopen it:
+		the host re-sends the same paths, so SetTextParameter sees no change.
+		Before this the layer simply stayed black.
+
+		It is also how Auto follows the canvas. This viewport is the only size
+		the plugin reads, deliberately -- not the one bound at draw time, which
+		a host changes for previews and thumbnails, and following those would
+		swap engines and restart the game mid-show.
+	*/
+	if( !mIwad.empty() )
+	{
+		mPendingLoad = true;
+		mLoadFailed  = false;
+	}
 	return FF_SUCCESS;
 }
 
@@ -258,6 +308,7 @@ bool ResodoomPlugin::EnsurePicture( uint32_t width, uint32_t height, size_t fram
 FFResult ResodoomPlugin::DeInitGL()
 {
 	mEngine.Close();
+	mEngineChoice = 0;
 	mPresenter.Destroy();
 
 	mFrame.clear();
@@ -279,6 +330,7 @@ void ResodoomPlugin::ApplyPendingLoad()
 	mPendingLoad = false;
 
 	mEngine.Close();
+	mEngineChoice = 0;
 	std::memset( mButtonWasDown, 0, sizeof( mButtonWasDown ) );
 
 	mLoadedIwad = mIwad;
@@ -292,7 +344,26 @@ void ResodoomPlugin::ApplyPendingLoad()
 		return;
 	}
 
-	const std::string engine = EngineLibraryPath();
+	/*
+		Which engine: the Aspect parameter against the canvas InitGL was given.
+		Recorded before loading, so a missing engine's fallback below is not
+		mistaken for a new choice the next time the question is asked.
+	*/
+	mEngineChoice = ChosenEngineWidth();
+
+	std::string engine = EngineLibraryPath( mEngineChoice );
+	if( engine.empty() && mEngineChoice != kClassicEngineWidth )
+	{
+		/*
+			A bundle missing one aspect's engine should still play: fall back
+			to the classic one and say so, rather than leave the layer black
+			over a packaging mistake. verify.sh checks every engine is present,
+			so this is for a hand-assembled or half-copied install.
+		*/
+		stagehand::diag::error( "no " + std::to_string( mEngineChoice )
+								+ "-wide engine in this bundle -- using the 320 one" );
+		engine = EngineLibraryPath( kClassicEngineWidth );
+	}
 	if( engine.empty() )
 	{
 		stagehand::diag::error( "the engine library is missing from the plugin bundle" );
@@ -341,9 +412,20 @@ void ResodoomPlugin::ApplyPendingLoad()
 		return;
 	}
 
+	// Say what was chosen and why: "Auto" alone does not tell anyone which
+	// engine a black or oddly framed layer is actually running.
+	const bool automatic = OptionIndex( mParams[ PT_ASPECT ], kEngineAspectCount + 1 ) == 0;
 	stagehand::diag::info( "engine picture " + std::to_string( info.width ) + "x"
-						   + std::to_string( info.height ) );
+						   + std::to_string( info.height )
+						   + ( automatic ? " (Aspect Auto, canvas " : " (Aspect fixed, canvas " )
+						   + std::to_string( mViewport.width ) + "x"
+						   + std::to_string( mViewport.height ) + ")" );
 	mLoadFailed = false;
+}
+
+uint32_t ResodoomPlugin::ChosenEngineWidth() const
+{
+	return EngineWidthFromParam( mParams[ PT_ASPECT ], mViewport.width, mViewport.height );
 }
 
 // ---------------------------------------------------------------------------
@@ -471,6 +553,20 @@ FFResult ResodoomPlugin::SetFloatParameter( unsigned int index, float value )
 			// going through its menus.
 			mPendingLoad = true;
 			mLoadFailed  = false;
+			break;
+
+		case PT_ASPECT:
+			/*
+				A reload only if it changes the ENGINE. Resolume re-sends every
+				value on composition load and on undo, and picking 16:9 while
+				Auto is already running the 16:9 engine must not restart the
+				game. Nothing running means the next load chooses anyway.
+			*/
+			if( mEngineChoice != 0 && ChosenEngineWidth() != mEngineChoice )
+			{
+				mPendingLoad = true;
+				mLoadFailed  = false;
+			}
 			break;
 
 		default:
