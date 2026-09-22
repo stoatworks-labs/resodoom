@@ -86,6 +86,16 @@ private:
 
 	bool mPendingLoad = false;
 
+	/*
+		A reload the Aspect parameter asked for, kept apart from mPendingLoad
+		because it can be WITHDRAWN. Each Aspect change recomputes it: a knob
+		swept through 4:3 and back to the running engine before the next frame
+		asks for a reload and then cancels it. Folded into mPendingLoad, the
+		cancel could not tell its own request from a WAD change or a new Skill,
+		and the game restarted for a choice that ended where it began.
+	*/
+	bool mPendingAspectLoad = false;
+
 	/// Set when a load failed, cleared when the paths change. Stops the render
 	/// thread rebuilding a broken engine sixty times a second -- and, worse,
 	/// staging sixty copies of the library into the temp directory.
