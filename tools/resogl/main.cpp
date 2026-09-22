@@ -11,13 +11,30 @@
 	  resogl --iwad W.wad --check --size 720x720
 	  resogl --iwad W.wad --out /tmp/f.ppm
 
-	macOS only: it is CGL.
+	Everything here is portable except getting a context, which nothing has
+	ever made portable: CGL on macOS, WGL behind a hidden window on Windows.
+	Both ask for 4.1 core, because that is what the presenter's shader wants
+	and a context that quietly hands back something older fails later, in the
+	shader log, looking like a source problem.
+
+	On a machine with no usable GPU driver -- a VM, a CI runner -- put a
+	software GL beside the executable and it will be picked up ahead of the
+	system one. Mesa's llvmpipe is what Resolume itself ships for that case.
 */
 #include "Plugin.h"
 
-#include <OpenGL/CGLCurrent.h>
-#include <OpenGL/CGLTypes.h>
-#include <OpenGL/OpenGL.h>
+#if defined( __APPLE__ )
+	#include <OpenGL/CGLCurrent.h>
+	#include <OpenGL/CGLTypes.h>
+	#include <OpenGL/OpenGL.h>
+#elif defined( _WIN32 )
+	#include <windows.h>
+	// After windows.h, and GL/glew.h before any GL call: on Windows the system
+	// opengl32 exports GL 1.1 and everything this harness draws with arrives
+	// through an extension pointer.
+	#include <GL/glew.h>
+	#include <GL/wglew.h>
+#endif
 
 #include <chrono>
 #include <cstdio>
@@ -34,6 +51,22 @@ namespace
 int g_checks   = 0;
 int g_failures = 0;
 
+/*
+	What the engine this harness links against was built to produce. From
+	CMake, so the Fit assertions below stay correct at any width rather than
+	quietly testing 4:3 against a 16:9 picture.
+*/
+#ifndef RESODOOM_SCREEN_WIDTH
+	#define RESODOOM_SCREEN_WIDTH 320
+#endif
+#ifndef RESODOOM_SCREEN_HEIGHT
+	#define RESODOOM_SCREEN_HEIGHT 200
+#endif
+
+constexpr int   kEngineWidth     = RESODOOM_SCREEN_WIDTH;
+constexpr int   kEngineHeight    = RESODOOM_SCREEN_HEIGHT;
+constexpr float kDoomPixelAspect = 5.0f / 6.0f;
+
 void ok( bool condition, const char* what )
 {
 	g_checks += 1;
@@ -42,7 +75,29 @@ void ok( bool condition, const char* what )
 		g_failures += 1;
 }
 
-CGLContextObj MakeContext()
+/*
+	A current 4.1 core context, or false. `Destroy` puts everything back.
+
+	The two platforms share nothing here but the shape, so each keeps its own
+	handles rather than pretending to a common type.
+*/
+struct Context
+{
+#if defined( __APPLE__ )
+	CGLContextObj cgl = nullptr;
+#elif defined( _WIN32 )
+	HWND  window = nullptr;
+	HDC   dc     = nullptr;
+	HGLRC rc     = nullptr;
+#endif
+
+	bool Create();
+	void Destroy();
+};
+
+#if defined( __APPLE__ )
+
+bool Context::Create()
 {
 	/*
 		Accelerated first, software second. A GitHub macOS runner has no
@@ -69,15 +124,140 @@ CGLContextObj MakeContext()
 	if( CGLChoosePixelFormat( accelerated, &format, &n ) != kCGLNoError || format == nullptr )
 		CGLChoosePixelFormat( software, &format, &n );
 	if( !format )
-		return nullptr;
+		return false;
 
-	CGLContextObj context = nullptr;
-	CGLCreateContext( format, nullptr, &context );
+	CGLCreateContext( format, nullptr, &cgl );
 	CGLDestroyPixelFormat( format );
-	if( context )
-		CGLSetCurrentContext( context );
-	return context;
+	if( !cgl )
+		return false;
+
+	CGLSetCurrentContext( cgl );
+	return true;
 }
+
+void Context::Destroy()
+{
+	CGLSetCurrentContext( nullptr );
+	if( cgl )
+		CGLDestroyContext( cgl );
+	cgl = nullptr;
+}
+
+#elif defined( _WIN32 )
+
+/*
+	WGL's bootstrap problem: choosing a modern pixel format and asking for a
+	core profile both go through extensions, and an extension pointer can only
+	be resolved from a context that already exists. So a throwaway 1.1 context
+	is made first, GLEW is initialised against it, and only then can the real
+	one be asked for.
+
+	The window is never shown. All the drawing goes to an FBO; the window
+	exists because WGL has no way to make a context without a device context,
+	and a device context comes from a window.
+*/
+bool Context::Create()
+{
+	WNDCLASSA wc   = {};
+	wc.lpfnWndProc = DefWindowProcA;
+	wc.hInstance   = GetModuleHandleA( nullptr );
+	wc.lpszClassName = "resogl";
+	RegisterClassA( &wc );
+
+	window = CreateWindowExA( 0, "resogl", "resogl", WS_OVERLAPPEDWINDOW, 0, 0, 16, 16,
+							  nullptr, nullptr, wc.hInstance, nullptr );
+	if( !window )
+		return false;
+
+	dc = GetDC( window );
+	if( !dc )
+		return false;
+
+	PIXELFORMATDESCRIPTOR pfd = {};
+	pfd.nSize        = sizeof( pfd );
+	pfd.nVersion     = 1;
+	pfd.dwFlags      = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+	pfd.iPixelType   = PFD_TYPE_RGBA;
+	pfd.cColorBits   = 24;
+	pfd.cAlphaBits   = 8;
+	pfd.iLayerType   = PFD_MAIN_PLANE;
+
+	const int format = ChoosePixelFormat( dc, &pfd );
+	if( format == 0 || !SetPixelFormat( dc, format, &pfd ) )
+		return false;
+
+	HGLRC bootstrap = wglCreateContext( dc );
+	if( !bootstrap || !wglMakeCurrent( dc, bootstrap ) )
+		return false;
+
+	glewExperimental = GL_TRUE;
+	if( glewInit() != GLEW_OK )
+	{
+		wglMakeCurrent( nullptr, nullptr );
+		wglDeleteContext( bootstrap );
+		return false;
+	}
+
+	if( wglewIsSupported( "WGL_ARB_create_context" ) )
+	{
+		const int attribs[] = {
+			WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
+			WGL_CONTEXT_MINOR_VERSION_ARB, 1,
+			WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+			0
+		};
+		rc = wglCreateContextAttribsARB( dc, nullptr, attribs );
+	}
+
+	if( rc )
+	{
+		// Only now is the bootstrap expendable, and it has to go current-off
+		// before it can be deleted.
+		wglMakeCurrent( nullptr, nullptr );
+		wglDeleteContext( bootstrap );
+		if( !wglMakeCurrent( dc, rc ) )
+			return false;
+
+		// GLEW resolved its pointers against the compatibility context. Most
+		// drivers hand back the same addresses, but that is not promised.
+		glewExperimental = GL_TRUE;
+		if( glewInit() != GLEW_OK )
+			return false;
+	}
+	else
+	{
+		/*
+			No core profile available. Keep the 1.1-era context rather than
+			failing: a software GL that only offers compatibility still
+			compiles the shader and still catches what this harness is for.
+		*/
+		rc = bootstrap;
+	}
+
+	/*
+		glewInit leaves a GL_INVALID_ENUM behind on a core profile -- it probes
+		with glGetString(GL_EXTENSIONS), which core removed. Swallowing it here
+		keeps it from being reported against the first real draw.
+	*/
+	glGetError();
+	return true;
+}
+
+void Context::Destroy()
+{
+	wglMakeCurrent( nullptr, nullptr );
+	if( rc )
+		wglDeleteContext( rc );
+	if( dc && window )
+		ReleaseDC( window, dc );
+	if( window )
+		DestroyWindow( window );
+	rc     = nullptr;
+	dc     = nullptr;
+	window = nullptr;
+}
+
+#endif
 
 struct Target
 {
@@ -305,8 +485,18 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height )
 		float coverX = 0.0f, coverY = 0.0f;
 		InkExtent( fitted, width, height, coverX, coverY );
 
+		/*
+			The picture's display aspect, from the geometry this build gave the
+			engine rather than from a literal 4:3. A widescreen engine letterboxes
+			on the other axis at a given target, and a hardcoded 4:3 here would
+			assert the opposite of the correct answer without ever failing to
+			compile.
+		*/
+		const float pictureAspect =
+			( float( kEngineWidth ) / float( kEngineHeight ) ) * kDoomPixelAspect;
+
 		const float targetAspect = float( width ) / float( height );
-		const bool  pictureWider = ( 4.0f / 3.0f ) > targetAspect;
+		const bool  pictureWider = pictureAspect > targetAspect;
 
 		if( pictureWider )
 		{
@@ -439,10 +629,10 @@ int main( int argc, char** argv )
 		return 2;
 	}
 
-	CGLContextObj context = MakeContext();
-	if( !context )
+	Context context;
+	if( !context.Create() )
 	{
-		std::fprintf( stderr, "resogl: no CGL context\n" );
+		std::fprintf( stderr, "resogl: no OpenGL context\n" );
 		return 1;
 	}
 
@@ -472,7 +662,6 @@ int main( int argc, char** argv )
 		plugin.DeInitGL();
 	}
 
-	CGLSetCurrentContext( nullptr );
-	CGLDestroyContext( context );
+	context.Destroy();
 	return rc;
 }

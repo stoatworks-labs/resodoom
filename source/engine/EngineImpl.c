@@ -25,7 +25,6 @@
 	only for the engine's own `exit()` path (see ResodoomHooks.h).
 */
 
-#include <pthread.h>
 #include <stdarg.h>
 #include <setjmp.h>
 #include <stdatomic.h>
@@ -36,11 +35,6 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
-#include <sys/time.h>
-
-#ifdef __APPLE__
-	#include <pthread/qos.h>
-#endif
 
 #include "stagehand/SourceAbi.h"
 #include "ResodoomHooks.h"
@@ -58,6 +52,13 @@
 #undef realloc
 #undef free
 #undef strdup
+
+/*
+	Threading, and deliberately below the #undefs rather than up with the other
+	includes: on Windows this pulls in windows.h, which is far too large to
+	parse with `malloc` and `free` still rewritten out from under it.
+*/
+#include "EngineThread.h"
 
 /*
 	Doom's own geometry and rate. These used to live in a bespoke header shared
@@ -128,7 +129,7 @@ _Static_assert( sizeof( AllocHeader ) % 16 == 0,
 				"allocation header must preserve 16-byte payload alignment" );
 
 static AllocHeader*    g_allocs      = NULL;
-static pthread_mutex_t g_allocLock   = PTHREAD_MUTEX_INITIALIZER;
+static rd_mutex        g_allocLock   = RD_MUTEX_STATIC_INIT;
 static size_t          g_allocBytes  = 0;
 
 static void* header_to_payload( AllocHeader* h ) { return (void*)( h + 1 ); }
@@ -143,19 +144,19 @@ static void alloc_track( AllocHeader* h, size_t size )
 {
 	h->magic = RESODOOM_ALLOC_MAGIC;
 	h->size  = size;
-	pthread_mutex_lock( &g_allocLock );
+	rd_mutex_lock( &g_allocLock );
 	h->prev = NULL;
 	h->next = g_allocs;
 	if( g_allocs )
 		g_allocs->prev = h;
 	g_allocs     = h;
 	g_allocBytes += size;
-	pthread_mutex_unlock( &g_allocLock );
+	rd_mutex_unlock( &g_allocLock );
 }
 
 static void alloc_untrack( AllocHeader* h )
 {
-	pthread_mutex_lock( &g_allocLock );
+	rd_mutex_lock( &g_allocLock );
 	if( h->prev )
 		h->prev->next = h->next;
 	else if( g_allocs == h )
@@ -163,7 +164,7 @@ static void alloc_untrack( AllocHeader* h )
 	if( h->next )
 		h->next->prev = h->prev;
 	g_allocBytes -= h->size;
-	pthread_mutex_unlock( &g_allocLock );
+	rd_mutex_unlock( &g_allocLock );
 	h->magic = 0;
 }
 
@@ -244,11 +245,11 @@ char* resodoom_hook_strdup( const char* s )
 
 static void alloc_free_all( void )
 {
-	pthread_mutex_lock( &g_allocLock );
+	rd_mutex_lock( &g_allocLock );
 	AllocHeader* h = g_allocs;
 	g_allocs       = NULL;
 	g_allocBytes   = 0;
-	pthread_mutex_unlock( &g_allocLock );
+	rd_mutex_unlock( &g_allocLock );
 
 	while( h )
 	{
@@ -275,7 +276,7 @@ typedef struct InputEvent
 
 typedef struct Engine
 {
-	pthread_t       thread;
+	rd_thread       thread;
 	bool            threadLive;
 
 	atomic_int      state;       /* StagehandState                           */
@@ -303,8 +304,8 @@ typedef struct Engine
 	int             writeSlot;
 	int             spareSlot;
 
-	pthread_mutex_t gate;
-	pthread_cond_t  gateCv;
+	rd_mutex        gate;
+	rd_cond         gateCv;
 
 	InputEvent      input[ RESODOOM_INPUT_CAPACITY ];
 	atomic_uint     inHead;
@@ -440,20 +441,9 @@ void DG_SleepMs( uint32_t ms )
 			so a missed wakeup has to be survivable. It costs 2 ms, and cannot
 			cost more.
 		*/
-		struct timespec deadline;
-		struct timeval  now;
-		gettimeofday( &now, NULL );
-		deadline.tv_sec  = now.tv_sec;
-		deadline.tv_nsec = ( now.tv_usec + 2000 ) * 1000;
-		if( deadline.tv_nsec >= 1000000000L )
-		{
-			deadline.tv_sec += 1;
-			deadline.tv_nsec -= 1000000000L;
-		}
-
-		pthread_mutex_lock( &g.gate );
-		pthread_cond_timedwait( &g.gateCv, &g.gate, &deadline );
-		pthread_mutex_unlock( &g.gate );
+		rd_mutex_lock( &g.gate );
+		rd_cond_wait_ms( &g.gateCv, &g.gate, 2 );
+		rd_mutex_unlock( &g.gate );
 	}
 }
 
@@ -613,18 +603,9 @@ static void build_argv( const StagehandOption* options, int count )
 	g.argv[ g.argc ] = NULL;
 }
 
-static void* engine_thread( void* unused )
+static void engine_thread( void )
 {
-	(void)unused;
-
-#ifdef __APPLE__
-	/*
-		App Nap will demote a worker thread in a covered window, and a
-		dedicated thread is not on its own enough -- elsewhere in the fleet
-		that took a 50 Hz loop down to 7.
-	*/
-	pthread_set_qos_class_self_np( QOS_CLASS_USER_INTERACTIVE, 0 );
-#endif
+	rd_thread_stay_awake();
 
 	int jumped = setjmp( g.escape );
 	if( jumped == 0 )
@@ -647,8 +628,6 @@ static void* engine_thread( void* unused )
 		atomic_store( &g.state, STAGEHAND_CLOSED );
 	}
 	/* jumped == 1: resodoom_hook_exit already set STAGEHAND_FAILED and the text. */
-
-	return NULL;
 }
 
 /* ------------------------------------------------------------------ */
@@ -695,8 +674,8 @@ static int api_open( const StagehandOption* options, int count )
 	}
 
 	g.deterministic = opt_int( options, count, "deterministic", 0 );
-	pthread_mutex_init( &g.gate, NULL );
-	pthread_cond_init( &g.gateCv, NULL );
+	rd_mutex_init( &g.gate );
+	rd_cond_init( &g.gateCv );
 
 	atomic_store( &g.state, STAGEHAND_STARTING );
 	atomic_store( &g.quit, false );
@@ -730,16 +709,11 @@ static int api_open( const StagehandOption* options, int count )
 		overran -- a backtrace that points at an innocent leaf and says
 		nothing about stacks.
 	*/
-	pthread_attr_t attr;
-	pthread_attr_init( &attr );
-	pthread_attr_setstacksize( &attr, 8u * 1024u * 1024u );
-
-	int rc = pthread_create( &g.thread, &attr, engine_thread, NULL );
-	pthread_attr_destroy( &attr );
-
-	if( rc != 0 )
+	char why[ 160 ];
+	if( !rd_thread_start( &g.thread, engine_thread, 8u * 1024u * 1024u,
+						  why, sizeof( why ) ) )
 	{
-		set_status( "could not start the engine thread: %s", strerror( rc ) );
+		set_status( "could not start the engine thread: %s", why );
 		atomic_store( &g.state, STAGEHAND_FAILED );
 		return -1;
 	}
@@ -754,11 +728,11 @@ static void api_close( void )
 	{
 		atomic_store( &g.quit, true );
 		atomic_fetch_add( &g.budgetTics, 1 ); /* unpark a thread in the gate */
-		pthread_cond_broadcast( &g.gateCv );
-		pthread_join( g.thread, NULL );
+		rd_cond_broadcast( &g.gateCv );
+		rd_thread_join( g.thread );
 		g.threadLive = false;
-		pthread_cond_destroy( &g.gateCv );
-		pthread_mutex_destroy( &g.gate );
+		rd_cond_destroy( &g.gateCv );
+		rd_mutex_destroy( &g.gate );
 	}
 
 	alloc_free_all();
@@ -824,7 +798,7 @@ static void api_grant( int tics )
 
 	atomic_fetch_add( &g.budgetTics, (unsigned)tics );
 	/* Signalled without the mutex on purpose -- see the wait in DG_SleepMs. */
-	pthread_cond_broadcast( &g.gateCv );
+	rd_cond_broadcast( &g.gateCv );
 }
 
 static int api_frame( void* dst, size_t dstBytes, uint32_t lastSeq, uint32_t* outSeq,

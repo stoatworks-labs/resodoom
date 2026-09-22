@@ -244,15 +244,32 @@ if( RESODOOM_BUILD_PLUGIN AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/ffgl/C
 	# The GL harness: the real plugin class through the real FFGL sequence in a
 	# headless core-profile context. The only thing that catches a shader that
 	# will not compile or a uniform whose name does not match the GLSL.
-	if( RESODOOM_BUILD_TOOLS AND APPLE )
+	if( RESODOOM_BUILD_TOOLS )
 		add_executable( resogl tools/resogl/main.cpp )
-		target_link_libraries( resogl PRIVATE resodoom_plugin stagehand
-			"-framework OpenGL"
-			"-framework AppKit"
-		)
+		target_link_libraries( resogl PRIVATE resodoom_plugin stagehand )
+
+		if( APPLE )
+			target_link_libraries( resogl PRIVATE
+				"-framework OpenGL"
+				"-framework AppKit"
+			)
+		else()
+			# stagehand already carries OpenGL::GL and GLEW::GLEW forward; what
+			# it does not carry is WGL's window, which lives in user32/gdi32.
+			find_package( OpenGL REQUIRED )
+			target_link_libraries( resogl PRIVATE OpenGL::GL )
+			if( WIN32 )
+				target_link_libraries( resogl PRIVATE user32 gdi32 )
+			endif()
+		endif()
+
 		add_dependencies( resogl resodoom_engine )
 		target_compile_definitions( resogl PRIVATE
 			RESODOOM_ENGINE_BUILD_PATH="$<TARGET_FILE:resodoom_engine>"
+			# See the note by kEngineWidth: the Fit checks compare against the
+			# picture this build actually produces.
+			RESODOOM_SCREEN_WIDTH=${RESODOOM_SCREEN_WIDTH}
+			RESODOOM_SCREEN_HEIGHT=${RESODOOM_SCREEN_HEIGHT}
 		)
 	endif()
 
@@ -286,5 +303,9 @@ if( RESODOOM_BUILD_TOOLS )
 	add_dependencies( resotest resodoom_engine )
 	target_compile_definitions( resotest PRIVATE
 		RESODOOM_ENGINE_DEFAULT_PATH="$<TARGET_FILE:resodoom_engine>"
+		# The same geometry the engine was built with, so "does Describe() say
+		# what this build asked for" stays a real question at any width.
+		RESODOOM_SCREEN_WIDTH=${RESODOOM_SCREEN_WIDTH}
+		RESODOOM_SCREEN_HEIGHT=${RESODOOM_SCREEN_HEIGHT}
 	)
 endif()

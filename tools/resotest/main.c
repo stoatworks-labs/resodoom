@@ -14,24 +14,127 @@
 	only link to real time. Two cold runs are then byte-identical and a pixel
 	digest is a stable thing to assert against.
 */
-#include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 #include "stagehand/SourceAbi.h"
 
-#ifndef RESODOOM_ENGINE_DEFAULT_PATH
-	#define RESODOOM_ENGINE_DEFAULT_PATH "./libresodoom_engine.dylib"
+/*
+	The four platform things this harness needs: load a library by path, delete
+	a file, sleep briefly, and name a scratch file nothing else will pick.
+
+	Written out here rather than taken from stagehand on purpose -- the point
+	of this harness is to exercise the shipped engine through the raw loader,
+	with no part of the C++ side in the picture. See the note above
+	engine_open().
+*/
+#if defined( _WIN32 )
+
+	#include <windows.h>
+	#include <io.h>
+	#include <process.h>
+
+	#define RD_LIB_EXT ".dll"
+
+	static void* rd_dlopen( const char* path )
+	{
+		return (void*)LoadLibraryA( path );
+	}
+	static void* rd_dlsym( void* handle, const char* symbol )
+	{
+		/* Through uintptr_t: a FARPROC is a function pointer and the direct
+		   cast to void* is what MSVC objects to, not the conversion. */
+		return (void*)(uintptr_t)GetProcAddress( (HMODULE)handle, symbol );
+	}
+	static void rd_dlclose( void* handle ) { FreeLibrary( (HMODULE)handle ); }
+
+	static const char* rd_dlerror( void )
+	{
+		static char text[ 64 ];
+		snprintf( text, sizeof( text ), "Windows error %lu",
+				  (unsigned long)GetLastError() );
+		return text;
+	}
+
+	static void rd_unlink( const char* path ) { _unlink( path ); }
+
+	/* Nothing to do: Windows decides executability from the file, not a mode. */
+	static void rd_make_loadable( const char* path ) { (void)path; }
+
+	static void rd_sleep_us( unsigned usec )
+	{
+		/* Sleep takes milliseconds and Sleep(0) yields without waiting, which
+		   would spin this harness's poll loop at full tilt. */
+		Sleep( usec < 1000u ? 1u : usec / 1000u );
+	}
+
+	static int rd_pid( void ) { return _getpid(); }
+
+	static void rd_scratch_dir( char* out, size_t size )
+	{
+		/* GetTempPathA includes the trailing separator; callers append. */
+		if( GetTempPathA( (DWORD)size, out ) == 0 )
+			snprintf( out, size, ".\\" );
+	}
+
+#else
+
+	#include <dlfcn.h>
+	#include <sys/stat.h>
+	#include <unistd.h>
+
+	#if defined( __APPLE__ )
+		#define RD_LIB_EXT ".dylib"
+	#else
+		#define RD_LIB_EXT ".so"
+	#endif
+
+	static void* rd_dlopen( const char* path )
+	{
+		return dlopen( path, RTLD_NOW | RTLD_LOCAL );
+	}
+	static void* rd_dlsym( void* handle, const char* symbol )
+	{
+		return dlsym( handle, symbol );
+	}
+	static void        rd_dlclose( void* handle ) { dlclose( handle ); }
+	static const char* rd_dlerror( void ) { return dlerror(); }
+	static void        rd_unlink( const char* path ) { unlink( path ); }
+	static void        rd_make_loadable( const char* path ) { chmod( path, 0755 ); }
+	static void        rd_sleep_us( unsigned usec ) { usleep( usec ); }
+	static int         rd_pid( void ) { return (int)getpid(); }
+
+	static void rd_scratch_dir( char* out, size_t size )
+	{
+		snprintf( out, size, "/tmp/" );
+	}
+
 #endif
 
-/* Doom's geometry. Checked against the engine's own Describe() rather than
-   assumed -- the two disagreeing is exactly the sort of thing that produces a
-   sheared picture and no error message. */
-#define RESODOOM_WIDTH  320
-#define RESODOOM_HEIGHT 200
+#ifndef RESODOOM_ENGINE_DEFAULT_PATH
+	#define RESODOOM_ENGINE_DEFAULT_PATH "./libresodoom_engine" RD_LIB_EXT
+#endif
+
+/*
+	The geometry the build asked for, checked against the engine's own
+	Describe() rather than assumed -- the two disagreeing is exactly the sort
+	of thing that produces a sheared picture and no error message.
+
+	These come from CMake, the same two numbers the engine was compiled with,
+	so the check stays a real one at any width. Writing 320 here instead would
+	make it fail on a widescreen engine that was behaving perfectly; reading
+	the engine's own answer back would make it pass on one that was not.
+*/
+#ifndef RESODOOM_SCREEN_WIDTH
+	#define RESODOOM_SCREEN_WIDTH 320
+#endif
+#ifndef RESODOOM_SCREEN_HEIGHT
+	#define RESODOOM_SCREEN_HEIGHT 200
+#endif
+
+#define RESODOOM_WIDTH  RESODOOM_SCREEN_WIDTH
+#define RESODOOM_HEIGHT RESODOOM_SCREEN_HEIGHT
 #define RESODOOM_BYTES  ( RESODOOM_WIDTH * RESODOOM_HEIGHT * 4 )
 
 static int g_failures = 0;
@@ -79,9 +182,12 @@ static int g_copyCounter = 0;
 */
 static int engine_open( const char* source, EngineRef* out )
 {
+	char scratch[ 512 ];
+	rd_scratch_dir( scratch, sizeof( scratch ) );
+
 	memset( out, 0, sizeof( *out ) );
-	snprintf( out->path, sizeof( out->path ), "/tmp/resodoom-engine-%d-%d.dylib",
-			  (int)getpid(), g_copyCounter++ );
+	snprintf( out->path, sizeof( out->path ), "%sresodoom-engine-%d-%d" RD_LIB_EXT,
+			  scratch, rd_pid(), g_copyCounter++ );
 
 	FILE* in = fopen( source, "rb" );
 	if( !in )
@@ -103,23 +209,23 @@ static int engine_open( const char* source, EngineRef* out )
 		fwrite( buf, 1, n, cp );
 	fclose( in );
 	fclose( cp );
-	chmod( out->path, 0755 );
+	rd_make_loadable( out->path );
 
-	out->dl = dlopen( out->path, RTLD_NOW | RTLD_LOCAL );
+	out->dl = rd_dlopen( out->path );
 	if( !out->dl )
 	{
-		fprintf( stderr, "resotest: cannot load '%s': %s\n", out->path, dlerror() );
-		unlink( out->path );
+		fprintf( stderr, "resotest: cannot load '%s': %s\n", out->path, rd_dlerror() );
+		rd_unlink( out->path );
 		return 0;
 	}
 
 	stagehand_source_api_fn entry =
-		(stagehand_source_api_fn)dlsym( out->dl, STAGEHAND_SOURCE_ENTRY );
+		(stagehand_source_api_fn)rd_dlsym( out->dl, STAGEHAND_SOURCE_ENTRY );
 	if( !entry )
 	{
 		fprintf( stderr, "resotest: no %s in the engine\n", STAGEHAND_SOURCE_ENTRY );
-		dlclose( out->dl );
-		unlink( out->path );
+		rd_dlclose( out->dl );
+		rd_unlink( out->path );
 		return 0;
 	}
 
@@ -128,8 +234,8 @@ static int engine_open( const char* source, EngineRef* out )
 	{
 		fprintf( stderr, "resotest: ABI mismatch -- engine %u, harness %u\n",
 				 out->api ? out->api->abiVersion : 0u, STAGEHAND_ABI_VERSION );
-		dlclose( out->dl );
-		unlink( out->path );
+		rd_dlclose( out->dl );
+		rd_unlink( out->path );
 		return 0;
 	}
 	return 1;
@@ -140,9 +246,9 @@ static void engine_close( EngineRef* e )
 	if( e->api )
 		e->api->Close();
 	if( e->dl )
-		dlclose( e->dl );
+		rd_dlclose( e->dl );
 	if( e->path[ 0 ] )
-		unlink( e->path );
+		rd_unlink( e->path );
 	memset( e, 0, sizeof( *e ) );
 }
 
@@ -227,7 +333,7 @@ static int run( const StagehandSourceApi* api, int tics, Frame* out,
 				fprintf( stderr, "resotest: engine never parked after tic %d\n", i );
 				return -1;
 			}
-			usleep( 100 );
+			rd_sleep_us( 100 );
 		}
 
 		if( api->Frame( out->pixels, sizeof( out->pixels ), lastSeq, &out->seq, &out->tic ) )
