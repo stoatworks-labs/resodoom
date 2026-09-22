@@ -747,6 +747,23 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 			ok( moving && !backAtTitle,
 				"choosing the aspect a layer already runs does not restart the game" );
 
+			/*
+				There and back before the next frame: a MIDI knob swept through
+				4:3 and back, or automation crossing values within one frame.
+				The first change asks for a reload; the second must withdraw it,
+				or the game restarts for a choice that ended where it began.
+			*/
+			plugin.SetFloatParameter( resodoom::PT_ASPECT, kAspectClassic );
+			plugin.SetFloatParameter( resodoom::PT_ASPECT, 3.0f );
+			backAtTitle = false;
+			for( int i = 0; i < 40 && !backAtTitle; ++i )
+			{
+				std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+				backAtTitle = DrawOnce( plugin, t ) == title;
+			}
+			ok( !backAtTitle,
+				"an Aspect change undone before the next frame does not restart the game" );
+
 			plugin.SetFloatParameter( resodoom::PT_ASPECT, kAspectClassic );
 			std::vector< uint8_t > rgba;
 			float gotX = 0.0f, gotY = 0.0f, wantX = 0.0f, wantY = 0.0f;

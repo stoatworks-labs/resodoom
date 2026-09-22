@@ -327,7 +327,8 @@ FFResult ResodoomPlugin::DeInitGL()
 
 void ResodoomPlugin::ApplyPendingLoad()
 {
-	mPendingLoad = false;
+	mPendingLoad       = false;
+	mPendingAspectLoad = false;
 
 	mEngine.Close();
 	mEngineChoice = 0;
@@ -458,7 +459,7 @@ FFResult ResodoomPlugin::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 	if( width <= 0 || height <= 0 )
 		return FF_FAIL;
 
-	if( mPendingLoad && !mLoadFailed )
+	if( ( mPendingLoad || mPendingAspectLoad ) && !mLoadFailed )
 		ApplyPendingLoad();
 
 	SendInput();
@@ -561,11 +562,16 @@ FFResult ResodoomPlugin::SetFloatParameter( unsigned int index, float value )
 				value on composition load and on undo, and picking 16:9 while
 				Auto is already running the 16:9 engine must not restart the
 				game. Nothing running means the next load chooses anyway.
+
+				SET OR CLEARED, never only set: a change back to the running
+				engine before the next frame withdraws the request the previous
+				change made. See mPendingAspectLoad.
 			*/
-			if( mEngineChoice != 0 && ChosenEngineWidth() != mEngineChoice )
+			if( mEngineChoice != 0 )
 			{
-				mPendingLoad = true;
-				mLoadFailed  = false;
+				mPendingAspectLoad = ChosenEngineWidth() != mEngineChoice;
+				if( mPendingAspectLoad )
+					mLoadFailed = false;
 			}
 			break;
 
