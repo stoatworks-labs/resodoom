@@ -130,6 +130,30 @@ lines it touches are the places `centerxfrac` was being used as a **scale**;
 where it is the screen **centre** — the angle mapping's anchor, sprite and
 weapon positions — it is left alone, and those were already right.
 
+**The 2D layer is 320-wide art in 320-wide coordinates, and a blanket shift
+breaks it.** `patches/0004` does what Crispy Doom does: `V_DrawPatch` adds
+`DELTAWIDTH = (SCREENWIDTH - 320) / 2` and every caller must speak 320-space.
+Most already did. Eleven did not — they centred on the real `SCREENWIDTH`
+(intermission titles, stats, par time, the finale's END text), so the shift
+would have landed each one 53px off-centre — and several bounds checks
+(`M_WriteText`, `F_TextWrite`, hu_lib) would have let a long line of text run
+into `V_DrawPatch`'s own range check and an `I_Error`. Those moved to
+`ORIGWIDTH`. Three callers were already in *screen* space (the pause graphic,
+the automap marks, the view border) and subtract the shift. Map every draw
+call before adding a patch that moves them.
+
+**A full-screen page must black the strips beside it**, or they keep whatever
+was drawn last — after the first attract demo, slices of the 3D view beside
+the title page. Six places draw a page, and the first survey found four: the
+help screens are drawn from `m_menu.c` with `V_DrawPatchDirect`. So
+`V_DrawPatch` recognises a page instead — a 320x200 patch at the origin is one
+by definition — and clears first. The test that proves it is the one page
+drawn over live content: `resotest --warp 1 1 --keys 27,175,175,175,175,13`,
+Read This! over E1M1, whose sides must be black and not the level.
+
+`wi_stuff.c`'s fake screen-sized patch is **Chocolate Doom reproducing
+vanilla's MAP33 crash on purpose**. It is left alone, and still crashes.
+
 **`-include` is processed before the file's first line.** The hook header is
 force-included into every translation unit including the one that *implements*
 the hooks, so `#define ..._HOOKS_IMPL`-style guards arrive too late and the
