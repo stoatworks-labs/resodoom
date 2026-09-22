@@ -1,0 +1,331 @@
+diff -ru a/doomgeneric/am_map.c b/doomgeneric/am_map.c
+--- a/doomgeneric/am_map.c	2026-09-22 22:13:43
++++ b/doomgeneric/am_map.c	2026-09-22 22:13:44
+@@ -1323,7 +1323,7 @@
+ 	    fx = CXMTOF(markpoints[i].x);
+ 	    fy = CYMTOF(markpoints[i].y);
+ 	    if (fx >= f_x && fx <= f_w - w && fy >= f_y && fy <= f_h - h)
+-		V_DrawPatch(fx, fy, marknums[i]);
++		V_DrawPatch(fx - DELTAWIDTH, fy, marknums[i]);
+ 	}
+     }
+ 
+diff -ru a/doomgeneric/d_main.c b/doomgeneric/d_main.c
+--- a/doomgeneric/d_main.c	2026-09-22 22:13:43
++++ b/doomgeneric/d_main.c	2026-09-22 22:13:44
+@@ -288,7 +288,7 @@
+ 			y = 4;
+ 		else
+ 			y = viewwindowy+4;
+-		V_DrawPatchDirect(viewwindowx + (scaledviewwidth - 68) / 2, y,
++		V_DrawPatchDirect(viewwindowx + (scaledviewwidth - 68) / 2 - DELTAWIDTH, y,
+ 							  W_CacheLumpName (DEH_String("M_PAUSE"), PU_CACHE));
+     }
+ 
+diff -ru a/doomgeneric/f_finale.c b/doomgeneric/f_finale.c
+--- a/doomgeneric/f_finale.c	2026-09-22 22:13:43
++++ b/doomgeneric/f_finale.c	2026-09-22 22:13:44
+@@ -284,7 +284,7 @@
+ 	}
+ 		
+ 	w = SHORT (hu_font[c]->width);
+-	if (cx+w > SCREENWIDTH)
++	if (cx+w > ORIGWIDTH)
+ 	    break;
+ 	V_DrawPatch(cx, cy, hu_font[c]);
+ 	cx+=w;
+@@ -581,7 +581,7 @@
+     int		count;
+ 	
+     column = (column_t *)((byte *)patch + LONG(patch->columnofs[col]));
+-    desttop = I_VideoBuffer + x;
++    desttop = I_VideoBuffer + x + DELTAWIDTH;
+ 
+     // step through the posts in a column
+     while (column->topdelta != 0xff )
+@@ -630,6 +630,8 @@
+     // PFUB1's column table and on into its pixel data, following whatever
+     // offsets it finds there -- at the end of Episode 3, the only place this
+     // runs. At 320 this is the original bound.
++    V_ClearPillarbox();
++
+     for ( x=0 ; x<320 ; x++)
+     {
+ 	if (x+scrolled < 320)
+@@ -642,7 +644,7 @@
+ 	return;
+     if (finalecount < 1180)
+     {
+-        V_DrawPatch((SCREENWIDTH - 13 * 8) / 2,
++        V_DrawPatch((ORIGWIDTH - 13 * 8) / 2,
+                     (SCREENHEIGHT - 8 * 8) / 2, 
+                     W_CacheLumpName(DEH_String("END0"), PU_CACHE));
+ 	laststage = 0;
+@@ -659,7 +661,7 @@
+     }
+ 	
+     DEH_snprintf(name, 10, "END%i", stage);
+-    V_DrawPatch((SCREENWIDTH - 13 * 8) / 2, 
++    V_DrawPatch((ORIGWIDTH - 13 * 8) / 2, 
+                 (SCREENHEIGHT - 8 * 8) / 2, 
+                 W_CacheLumpName (name,PU_CACHE));
+ }
+diff -ru a/doomgeneric/hu_lib.c b/doomgeneric/hu_lib.c
+--- a/doomgeneric/hu_lib.c	2026-09-22 22:13:43
++++ b/doomgeneric/hu_lib.c	2026-09-22 22:13:44
+@@ -111,7 +111,7 @@
+ 	    && c <= '_')
+ 	{
+ 	    w = SHORT(l->f[c - l->sc]->width);
+-	    if (x+w > SCREENWIDTH)
++	    if (x+w > ORIGWIDTH)
+ 		break;
+ 	    V_DrawPatchDirect(x, l->y, l->f[c - l->sc]);
+ 	    x += w;
+@@ -119,14 +119,14 @@
+ 	else
+ 	{
+ 	    x += 4;
+-	    if (x >= SCREENWIDTH)
++	    if (x >= ORIGWIDTH)
+ 		break;
+ 	}
+     }
+ 
+     // draw the cursor if requested
+     if (drawcursor
+-	&& x + SHORT(l->f['_' - l->sc]->width) <= SCREENWIDTH)
++	&& x + SHORT(l->f['_' - l->sc]->width) <= ORIGWIDTH)
+     {
+ 	V_DrawPatchDirect(x, l->y, l->f['_' - l->sc]);
+     }
+diff -ru a/doomgeneric/i_video.h b/doomgeneric/i_video.h
+--- a/doomgeneric/i_video.h	2026-09-22 22:13:43
++++ b/doomgeneric/i_video.h	2026-09-22 22:13:44
+@@ -27,6 +27,14 @@
+ #define SCREENWIDTH  320
+ #define SCREENHEIGHT 200
+ 
++// RESODOOM: the geometry Doom's 2D art was drawn for, and how far right
++// it must move to sit centred in a wider buffer. DELTAWIDTH is a macro
++// on purpose: it expands where it is used, after ResodoomHooks.h has
++// redefined SCREENWIDTH, so it always sees the real width. 0 at 320.
++#define ORIGWIDTH  320
++#define ORIGHEIGHT 200
++#define DELTAWIDTH ((SCREENWIDTH - ORIGWIDTH) / 2)
++
+ // Screen width used for "squash" scale functions
+ 
+ #define SCREENWIDTH_4_3 256
+diff -ru a/doomgeneric/m_menu.c b/doomgeneric/m_menu.c
+--- a/doomgeneric/m_menu.c	2026-09-22 22:13:43
++++ b/doomgeneric/m_menu.c	2026-09-22 22:13:44
+@@ -1390,7 +1390,7 @@
+ 	}
+ 		
+ 	w = SHORT (hu_font[c]->width);
+-	if (cx+w > SCREENWIDTH)
++	if (cx+w > ORIGWIDTH)
+ 	    break;
+ 	V_DrawPatchDirect(cx, cy, hu_font[c]);
+ 	cx+=w;
+@@ -1992,7 +1992,7 @@
+                 start += strlen(string);
+             }
+ 
+-	    x = SCREENWIDTH/2 - M_StringWidth(string) / 2;
++	    x = ORIGWIDTH/2 - M_StringWidth(string) / 2;
+ 	    M_WriteText(x, y, string);
+ 	    y += SHORT(hu_font[0]->height);
+ 	}
+diff -ru a/doomgeneric/r_draw.c b/doomgeneric/r_draw.c
+--- a/doomgeneric/r_draw.c	2026-09-22 22:13:44
++++ b/doomgeneric/r_draw.c	2026-09-22 22:13:44
+@@ -877,34 +877,34 @@
+     patch = W_CacheLumpName(DEH_String("brdr_t"),PU_CACHE);
+ 
+     for (x=0 ; x<scaledviewwidth ; x+=8)
+-	V_DrawPatch(viewwindowx+x, viewwindowy-8, patch);
++	V_DrawPatch(-DELTAWIDTH + viewwindowx+x, viewwindowy-8, patch);
+     patch = W_CacheLumpName(DEH_String("brdr_b"),PU_CACHE);
+ 
+     for (x=0 ; x<scaledviewwidth ; x+=8)
+-	V_DrawPatch(viewwindowx+x, viewwindowy+viewheight, patch);
++	V_DrawPatch(-DELTAWIDTH + viewwindowx+x, viewwindowy+viewheight, patch);
+     patch = W_CacheLumpName(DEH_String("brdr_l"),PU_CACHE);
+ 
+     for (y=0 ; y<viewheight ; y+=8)
+-	V_DrawPatch(viewwindowx-8, viewwindowy+y, patch);
++	V_DrawPatch(-DELTAWIDTH + viewwindowx-8, viewwindowy+y, patch);
+     patch = W_CacheLumpName(DEH_String("brdr_r"),PU_CACHE);
+ 
+     for (y=0 ; y<viewheight ; y+=8)
+-	V_DrawPatch(viewwindowx+scaledviewwidth, viewwindowy+y, patch);
++	V_DrawPatch(-DELTAWIDTH + viewwindowx+scaledviewwidth, viewwindowy+y, patch);
+ 
+     // Draw beveled edge. 
+-    V_DrawPatch(viewwindowx-8,
++    V_DrawPatch(-DELTAWIDTH + viewwindowx-8,
+                 viewwindowy-8,
+                 W_CacheLumpName(DEH_String("brdr_tl"),PU_CACHE));
+     
+-    V_DrawPatch(viewwindowx+scaledviewwidth,
++    V_DrawPatch(-DELTAWIDTH + viewwindowx+scaledviewwidth,
+                 viewwindowy-8,
+                 W_CacheLumpName(DEH_String("brdr_tr"),PU_CACHE));
+     
+-    V_DrawPatch(viewwindowx-8,
++    V_DrawPatch(-DELTAWIDTH + viewwindowx-8,
+                 viewwindowy+viewheight,
+                 W_CacheLumpName(DEH_String("brdr_bl"),PU_CACHE));
+     
+-    V_DrawPatch(viewwindowx+scaledviewwidth,
++    V_DrawPatch(-DELTAWIDTH + viewwindowx+scaledviewwidth,
+                 viewwindowy+viewheight,
+                 W_CacheLumpName(DEH_String("brdr_br"),PU_CACHE));
+ 
+diff -ru a/doomgeneric/v_video.c b/doomgeneric/v_video.c
+--- a/doomgeneric/v_video.c	2026-09-22 22:13:43
++++ b/doomgeneric/v_video.c	2026-09-22 22:13:44
+@@ -136,6 +136,26 @@
+ // Masks a column based masked pic to the screen. 
+ //
+ 
++// RESODOOM: black the two strips a full-screen 320-wide page leaves
++// uncovered in a wider buffer. Without this they keep whatever was drawn
++// there last -- after the first attract demo, a slice of the 3D view
++// beside the title page. Palette index 0 is Doom's black.
++void V_ClearPillarbox(void)
++{
++    int y;
++
++    if (DELTAWIDTH <= 0)
++        return;
++
++    for (y = 0; y < SCREENHEIGHT; ++y)
++    {
++        byte *row = dest_screen + y * SCREENWIDTH;
++        memset(row, 0, DELTAWIDTH);
++        memset(row + DELTAWIDTH + ORIGWIDTH, 0,
++               SCREENWIDTH - DELTAWIDTH - ORIGWIDTH);
++    }
++}
++
+ void V_DrawPatch(int x, int y, patch_t *patch)
+ { 
+     int count;
+@@ -146,6 +166,20 @@
+     byte *source;
+     int w;
+ 
++    // RESODOOM: callers speak 320-space; move it to the middle of the
++    // real buffer. Done before the offsets and the range check, so both
++    // see final screen coordinates. A 320x200 patch at the origin is by
++    // definition a full-screen page -- title, credits, help, intermission,
++    // finale art -- and gets its pillarbox cleared: detecting it here
++    // cannot miss one of the six places that draw a page.
++    if (x == 0 && y == 0
++     && SHORT(patch->width) == ORIGWIDTH
++     && SHORT(patch->height) == ORIGHEIGHT)
++    {
++        V_ClearPillarbox();
++    }
++    x += DELTAWIDTH;
++
+     y -= SHORT(patch->topoffset);
+     x -= SHORT(patch->leftoffset);
+ 
+@@ -210,6 +244,9 @@
+     byte *source; 
+     int w; 
+  
++    // RESODOOM: 320-space, as V_DrawPatch.
++    x += DELTAWIDTH;
++
+     y -= SHORT(patch->topoffset); 
+     x -= SHORT(patch->leftoffset); 
+ 
+diff -ru a/doomgeneric/v_video.h b/doomgeneric/v_video.h
+--- a/doomgeneric/v_video.h	2026-09-22 22:13:44
++++ b/doomgeneric/v_video.h	2026-09-22 22:13:44
+@@ -55,6 +55,7 @@
+                 int destx, int desty);
+ 
+ void V_DrawPatch(int x, int y, patch_t *patch);
++void V_ClearPillarbox(void);
+ void V_DrawPatchFlipped(int x, int y, patch_t *patch);
+ void V_DrawTLPatch(int x, int y, patch_t *patch);
+ void V_DrawAltTLPatch(int x, int y, patch_t * patch);
+diff -ru a/doomgeneric/wi_stuff.c b/doomgeneric/wi_stuff.c
+--- a/doomgeneric/wi_stuff.c	2026-09-22 22:13:43
++++ b/doomgeneric/wi_stuff.c	2026-09-22 22:13:44
+@@ -420,13 +420,13 @@
+     if (gamemode != commercial || wbs->last < NUMCMAPS)
+     {
+         // draw <LevelName> 
+-        V_DrawPatch((SCREENWIDTH - SHORT(lnames[wbs->last]->width))/2,
++        V_DrawPatch((ORIGWIDTH - SHORT(lnames[wbs->last]->width))/2,
+                     y, lnames[wbs->last]);
+ 
+         // draw "Finished!"
+         y += (5*SHORT(lnames[wbs->last]->height))/4;
+ 
+-        V_DrawPatch((SCREENWIDTH - SHORT(finished->width)) / 2, y, finished);
++        V_DrawPatch((ORIGWIDTH - SHORT(finished->width)) / 2, y, finished);
+     }
+     else if (wbs->last == NUMCMAPS)
+     {
+@@ -454,14 +454,14 @@
+     int y = WI_TITLEY;
+ 
+     // draw "Entering"
+-    V_DrawPatch((SCREENWIDTH - SHORT(entering->width))/2,
++    V_DrawPatch((ORIGWIDTH - SHORT(entering->width))/2,
+ 		y,
+                 entering);
+ 
+     // draw level
+     y += (5*SHORT(lnames[wbs->next]->height))/4;
+ 
+-    V_DrawPatch((SCREENWIDTH - SHORT(lnames[wbs->next]->width))/2,
++    V_DrawPatch((ORIGWIDTH - SHORT(lnames[wbs->next]->width))/2,
+ 		y, 
+                 lnames[wbs->next]);
+ 
+@@ -489,7 +489,7 @@
+ 	bottom = top + SHORT(c[i]->height);
+ 
+ 	if (left >= 0
+-	    && right < SCREENWIDTH
++	    && right < ORIGWIDTH
+ 	    && top >= 0
+ 	    && bottom < SCREENHEIGHT)
+ 	{
+@@ -1459,21 +1459,21 @@
+     WI_drawLF();
+ 
+     V_DrawPatch(SP_STATSX, SP_STATSY, kills);
+-    WI_drawPercent(SCREENWIDTH - SP_STATSX, SP_STATSY, cnt_kills[0]);
++    WI_drawPercent(ORIGWIDTH - SP_STATSX, SP_STATSY, cnt_kills[0]);
+ 
+     V_DrawPatch(SP_STATSX, SP_STATSY+lh, items);
+-    WI_drawPercent(SCREENWIDTH - SP_STATSX, SP_STATSY+lh, cnt_items[0]);
++    WI_drawPercent(ORIGWIDTH - SP_STATSX, SP_STATSY+lh, cnt_items[0]);
+ 
+     V_DrawPatch(SP_STATSX, SP_STATSY+2*lh, sp_secret);
+-    WI_drawPercent(SCREENWIDTH - SP_STATSX, SP_STATSY+2*lh, cnt_secret[0]);
++    WI_drawPercent(ORIGWIDTH - SP_STATSX, SP_STATSY+2*lh, cnt_secret[0]);
+ 
+     V_DrawPatch(SP_TIMEX, SP_TIMEY, timepatch);
+-    WI_drawTime(SCREENWIDTH/2 - SP_TIMEX, SP_TIMEY, cnt_time);
++    WI_drawTime(ORIGWIDTH/2 - SP_TIMEX, SP_TIMEY, cnt_time);
+ 
+     if (wbs->epsd < 3)
+     {
+-	V_DrawPatch(SCREENWIDTH/2 + SP_TIMEX, SP_TIMEY, par);
+-	WI_drawTime(SCREENWIDTH - SP_TIMEX, SP_TIMEY, cnt_par);
++	V_DrawPatch(ORIGWIDTH/2 + SP_TIMEX, SP_TIMEY, par);
++	WI_drawTime(ORIGWIDTH - SP_TIMEX, SP_TIMEY, cnt_par);
+     }
+ 
+ }
