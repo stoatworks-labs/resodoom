@@ -1,0 +1,18 @@
+diff --git a/doomgeneric/f_finale.c b/doomgeneric/f_finale.c
+--- a/doomgeneric/f_finale.c
++++ b/doomgeneric/f_finale.c
+@@ -624,7 +624,13 @@
+     if (scrolled < 0)
+ 	scrolled = 0;
+ 		
+-    for ( x=0 ; x<SCREENWIDTH ; x++)
++    // RESODOOM: 320, not SCREENWIDTH. The two pictures being scrolled are
++    // 320 columns wide each, and the column index below is derived from x.
++    // Looping to a wider SCREENWIDTH walks F_DrawPatchCol past the end of
++    // PFUB1's column table and on into its pixel data, following whatever
++    // offsets it finds there -- at the end of Episode 3, the only place this
++    // runs. At 320 this is the original bound.
++    for ( x=0 ; x<320 ; x++)
+     {
+ 	if (x+scrolled < 320)
+ 	    F_DrawPatchCol (x, p1, x+scrolled);
