@@ -73,6 +73,94 @@ if( NOT EXISTS ${DG_DIR}/doomgeneric.c )
 endif()
 
 # ---------------------------------------------------------------------------
+# The patched engine tree
+#
+# **Almost everything this project changes about upstream goes through
+# ResodoomHooks.h, and that is still the rule.** Interception covers anything
+# that is a NAME -- exit, the allocator, SCREENWIDTH. What it cannot reach is
+# an edit inside an upstream function body, and the widescreen projection is
+# exactly that: four lines in R_ExecuteSetViewSize, R_InitTextureMapping and
+# R_ClearPlanes that decide whether a wider buffer means more angle or more
+# magnification.
+#
+# So those are carried as a patch series applied to a COPY, in the build tree.
+# The submodule stays byte-identical to upstream -- `git diff` in it is empty,
+# which is the property the rule exists to protect -- and taking a newer
+# doomgeneric is rebasing sixty lines of diff rather than resolving a merge.
+#
+# Adding a patch: drop it in patches/, numbered. They apply in name order with
+# `git apply -p2`, so generate them with `git diff` from the submodule root.
+#
+# **GIT_CEILING_DIRECTORIES is load-bearing.** The build tree usually sits
+# inside this repository, where `build/` is gitignored -- and `git apply`
+# silently SKIPS a path its repository ignores. It prints "Skipped patch" and
+# exits 1, which CMake reports as a failed build step for a patch that is
+# perfectly good. Stopping git's upward search before it finds a repository at
+# all makes it a plain file operation, which is all this ever wanted.
+# ---------------------------------------------------------------------------
+find_package( Git REQUIRED )
+
+file( GLOB RESODOOM_PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches/*.patch )
+list( SORT RESODOOM_PATCHES )
+
+set( DG_PATCHED ${CMAKE_CURRENT_BINARY_DIR}/doomgeneric-patched )
+set( DG_STAMP   ${CMAKE_CURRENT_BINARY_DIR}/doomgeneric-patched.stamp )
+
+# Rebuilt from scratch whenever a patch changes, because `git apply` is not
+# idempotent -- re-running it over an already-patched tree fails rather than
+# doing nothing, and the failure looks like a corrupt patch.
+set( DG_PATCH_COMMANDS
+	COMMAND ${CMAKE_COMMAND} -E rm -rf ${DG_PATCHED}
+	COMMAND ${CMAKE_COMMAND} -E copy_directory ${DG_DIR} ${DG_PATCHED}
+)
+foreach( patch ${RESODOOM_PATCHES} )
+	list( APPEND DG_PATCH_COMMANDS
+		COMMAND ${CMAKE_COMMAND} -E env
+				GIT_CEILING_DIRECTORIES=${CMAKE_CURRENT_BINARY_DIR}
+				${GIT_EXECUTABLE} -C ${DG_PATCHED}
+				apply -p2 --whitespace=nowarn ${patch} )
+endforeach()
+
+# **Run from the binary dir, not from the patched tree**, and reach into it
+# with --directory. The first command deletes that tree, so a WORKING_DIRECTORY
+# pointing at it leaves the shell standing in a directory that no longer
+# exists, and every later step fails with a `cd` error naming the path it was
+# just asked to recreate.
+add_custom_command(
+	OUTPUT ${DG_STAMP}
+	${DG_PATCH_COMMANDS}
+	COMMAND ${CMAKE_COMMAND} -E touch ${DG_STAMP}
+	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+	DEPENDS ${RESODOOM_PATCHES}
+	COMMENT "Patching doomgeneric into the build tree"
+	VERBATIM
+)
+add_custom_target( doomgeneric_patched DEPENDS ${DG_STAMP} )
+
+# Configure-time too: the source list below must name files that exist before
+# the first build, or CMake refuses the target outright.
+if( NOT EXISTS ${DG_PATCHED}/doomgeneric.c )
+	file( REMOVE_RECURSE ${DG_PATCHED} )
+	file( COPY ${DG_DIR}/ DESTINATION ${DG_PATCHED} )
+	foreach( patch ${RESODOOM_PATCHES} )
+		execute_process(
+			COMMAND ${CMAKE_COMMAND} -E env
+					GIT_CEILING_DIRECTORIES=${CMAKE_CURRENT_BINARY_DIR}
+					${GIT_EXECUTABLE} -C ${DG_PATCHED}
+					apply -p2 --whitespace=nowarn ${patch}
+			RESULT_VARIABLE patch_result
+			ERROR_VARIABLE  patch_error
+		)
+		if( NOT patch_result EQUAL 0 )
+			message( FATAL_ERROR
+				"patch did not apply to this doomgeneric:\n  ${patch}\n"
+				"${patch_error}\n"
+				"A doomgeneric bump usually means rebasing it." )
+		endif()
+	endforeach()
+endif()
+
+# ---------------------------------------------------------------------------
 # The engine
 #
 # Upstream's own source list, minus every doomgeneric_<platform>.c -- those are
@@ -93,7 +181,8 @@ set( DG_SOURCES
 	v_video.c wi_stuff.c w_checksum.c w_file.c w_file_stdc.c w_main.c w_wad.c
 	z_zone.c doomgeneric.c
 )
-list( TRANSFORM DG_SOURCES PREPEND ${DG_DIR}/ )
+# From the patched copy, never from the submodule itself.
+list( TRANSFORM DG_SOURCES PREPEND ${DG_PATCHED}/ )
 
 foreach( src ${DG_SOURCES} )
 	if( NOT EXISTS ${src} )
@@ -110,8 +199,14 @@ add_library( resodoom_engine SHARED
 	source/engine/EngineImpl.c
 )
 
+# Re-patch before compiling anything, on every build where a patch changed.
+add_dependencies( resodoom_engine doomgeneric_patched )
+
 target_include_directories( resodoom_engine PUBLIC
-	${DG_DIR}
+	# The patched copy, so a patch that touches a HEADER is seen. DG_DIR is
+	# deliberately absent: with both on the path the pristine copy of a patched
+	# header could win, and the symptom would be a link error naming neither.
+	${DG_PATCHED}
 	${CMAKE_CURRENT_SOURCE_DIR}/source/engine
 	${CMAKE_CURRENT_SOURCE_DIR}/external/stagehand/include
 )
