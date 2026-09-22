@@ -29,10 +29,11 @@ option( RESODOOM_BUILD_TOOLS  "Build the verification tools" ON )
 # vertical field unchanged. patches/0002 keeps the view at size 11, the only
 # size that is safe in a wider buffer. See AGENTS.md for both.
 #
-# **The 2D layer is still 320 wide, at the left.** The title and credit pages,
-# menus, intermission and finale are 320-wide artwork drawn at 320-relative
-# positions, so at any other width they sit against the left edge. The 3D view
-# is right; the screens around it are not yet.
+# patches/0004 centres the 2D layer -- title and credit pages, menus, help,
+# intermission, finale -- which is 320-wide art in 320-wide coordinates:
+# V_DrawPatch shifts it by (SCREENWIDTH - 320) / 2 and blacks the strips
+# beside a full-screen page. Only the WIDTH is handled; a buffer taller than
+# 200 would leave the 2D layer at the top.
 # ---------------------------------------------------------------------------
 set( RESODOOM_SCREEN_WIDTH  320 CACHE STRING "Doom's render width in pixels." )
 set( RESODOOM_SCREEN_HEIGHT 200 CACHE STRING "Doom's render height in pixels." )

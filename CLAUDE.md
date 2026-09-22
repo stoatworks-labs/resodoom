@@ -28,8 +28,8 @@ anything about what may be shipped. **No WAD is ever committed here.**
   (these are cached — re-running `cmake -B build` without them keeps the old
   value, so pass `=ON` explicitly to turn one back on)
 - Widescreen engine: `-DRESODOOM_SCREEN_WIDTH=426` (16:9; 384 = 16:10,
-  568 = 21:9). Also cached. The 3D view is true Hor+; the 2D screens (title,
-  menus, intermission) are still 320-wide art at the left edge.
+  568 = 21:9). Also cached. The 3D view is true Hor+ and the 2D screens are
+  centred with black pillarboxes. Width only — the height stays 200.
 
 ## Verify
 - Everything: `RESODOOM_TEST_IWAD=/path/to/freedoom1.wad tools/verify.sh`
@@ -40,6 +40,9 @@ anything about what may be shipped. **No WAD is ever committed here.**
 - A frame as a PPM: `./build/resotest --iwad W.wad --tics 500 --out /tmp/f.ppm`
 - A PPM per frame: `./build/resotest --iwad W.wad --tics 400 --seq /tmp/f_`
 - Straight into a level: `./build/resotest --iwad W.wad --warp 1 3 --skill 4`
+- The menu, or anything reached through it: `--menu`, or `--keys 27,175,13`
+  (doomkeys codes, pressed in order). Read This! over a level is
+  `--warp 1 1 --keys 27,175,175,175,175,13`.
 
 `sips -s format png /tmp/f.ppm --out /tmp/f.png` to look at one.
 
