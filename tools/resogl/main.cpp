@@ -28,6 +28,12 @@
 	#include <OpenGL/CGLTypes.h>
 	#include <OpenGL/OpenGL.h>
 #elif defined( _WIN32 )
+	#ifndef WIN32_LEAN_AND_MEAN
+		#define WIN32_LEAN_AND_MEAN
+	#endif
+	#ifndef NOMINMAX
+		#define NOMINMAX
+	#endif
 	#include <windows.h>
 	// After windows.h, and GL/glew.h before any GL call: on Windows the system
 	// opengl32 exports GL 1.1 and everything this harness draws with arrives

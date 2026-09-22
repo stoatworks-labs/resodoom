@@ -31,6 +31,11 @@
 */
 #if defined( _WIN32 )
 
+	/* See EngineThread.h: LEAN_AND_MEAN drops the RPC and OLE headers, which
+	   are where the SDK's `boolean` collides with Doom's. */
+	#ifndef WIN32_LEAN_AND_MEAN
+		#define WIN32_LEAN_AND_MEAN
+	#endif
 	#include <windows.h>
 	#include <io.h>
 	#include <process.h>
