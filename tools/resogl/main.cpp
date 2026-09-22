@@ -674,7 +674,9 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 			pillarbox reads as picture -- which is right: it is the buffer's
 			extent being measured, not the art's.
 		*/
-		auto near = []( float a, float b ) { return a > b - 0.02f && a < b + 0.02f; };
+		// Not "near": windows.h still defines near and far as empty macros from
+		// 16-bit pointers, and `auto near = ...` compiles as `auto = ...`.
+		auto closeTo = []( float a, float b ) { return a > b - 0.02f && a < b + 0.02f; };
 
 		struct Case
 		{
@@ -707,7 +709,7 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 
 			std::printf( "  ....  %ux%u canvas: ink %.3f x %.3f; the %u engine gives %.3f x %.3f\n",
 						 c.w, c.h, gotX, gotY, c.engine, wantX, wantY );
-			ok( near( gotX, wantX ) && near( gotY, wantY ), c.what );
+			ok( closeTo( gotX, wantX ) && closeTo( gotY, wantY ), c.what );
 
 			plugin.DeInitGL();
 			DestroyTarget( t );
@@ -753,11 +755,11 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 			{
 				rgba = DrawOnce( plugin, t );
 				InkExtent( rgba, 640, 360, gotX, gotY );
-				if( !IsBlank( rgba ) && near( gotX, wantX ) && near( gotY, wantY ) )
+				if( !IsBlank( rgba ) && closeTo( gotX, wantX ) && closeTo( gotY, wantY ) )
 					break;
 				std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
 			}
-			ok( near( gotX, wantX ) && near( gotY, wantY ),
+			ok( closeTo( gotX, wantX ) && closeTo( gotY, wantY ),
 				"choosing another aspect on a running layer swaps the engine" );
 
 			plugin.DeInitGL();
