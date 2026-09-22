@@ -60,6 +60,18 @@ enum ParamId : unsigned
 	PT_AUTOMAP,
 
 	/*
+		Which engine to load, by aspect: Auto, or one of kEngineAspects.
+
+		**Here, after the controls, and not beside Scaling where it belongs by
+		meaning.** Saved compositions refer to parameters by index, and
+		inserting it among the display settings would shift all twelve
+		controls -- a MIDI mapping saved against an older version would then
+		drive the wrong buttons. Only the About block moves, and it holds no
+		state a composition needs back.
+	*/
+	PT_ASPECT,       ///< FF_TYPE_OPTION -- 0 is Auto
+
+	/*
 		The Stoatworks About block: one text line and one button per link.
 
 		Last in the enum so that adding a link later -- which is what happens
@@ -169,6 +181,82 @@ inline int OptionIndex( float value, int count )
 	if( index >= count )
 		index = count - 1;
 	return index;
+}
+
+/*
+	The engines the plugin ships, one per aspect, in the order the Aspect menu
+	lists them after Auto.
+
+	**This is CMakeLists.txt's RESODOOM_ENGINE_WIDTHS -- the same list.** Doom's
+	buffer width is compile-time, so each entry is a separately built library in
+	the bundle, and verify.sh checks every one is there.
+*/
+struct EngineAspect
+{
+	uint32_t    width;
+	const char* label;
+};
+
+constexpr EngineAspect kEngineAspects[] = {
+	{ 320, "4:3" },
+	{ 384, "16:10" },
+	{ 426, "16:9" },
+	{ 568, "21:9" },
+};
+constexpr int      kEngineAspectCount = int( sizeof( kEngineAspects ) / sizeof( kEngineAspects[ 0 ] ) );
+constexpr uint32_t kClassicEngineWidth = 320;
+constexpr uint32_t kEngineHeight       = 200;
+
+/// Doom's pixels are 5:6 -- taller than wide -- so the displayed shape of a
+/// W x 200 buffer is (W / 200) * 5/6: 4:3 at 320, 16:9 at 426.
+inline float EngineDisplayAspect( uint32_t width )
+{
+	return ( float( width ) / float( kEngineHeight ) ) * ( 5.0f / 6.0f );
+}
+
+/*
+	The engine whose picture is closest in shape to a canvas.
+
+	Closest as a RATIO: the log of one aspect over the other, so a picture half
+	as wide as the canvas is exactly as far off as one twice as wide. A plain
+	difference is not symmetric that way and leans narrow near the midpoints.
+
+	**Pixel Aspect is deliberately left out.** Auto matches the shape Doom is
+	meant to be seen at, so turning Pixel Aspect off to look at raw pixels never
+	swaps the engine -- which would restart the game under the operator.
+
+	A canvas with no size yet (before InitGL) gets the classic engine.
+*/
+inline uint32_t AutoEngineWidth( uint32_t canvasWidth, uint32_t canvasHeight )
+{
+	if( canvasWidth == 0 || canvasHeight == 0 )
+		return kClassicEngineWidth;
+
+	const float canvas = float( canvasWidth ) / float( canvasHeight );
+
+	uint32_t best     = kClassicEngineWidth;
+	float    bestDist = 0.0f;
+	for( int i = 0; i < kEngineAspectCount; ++i )
+	{
+		const float dist =
+			std::fabs( std::log( EngineDisplayAspect( kEngineAspects[ i ].width ) / canvas ) );
+		if( i == 0 || dist < bestDist )
+		{
+			best     = kEngineAspects[ i ].width;
+			bestDist = dist;
+		}
+	}
+	return best;
+}
+
+/// The engine the Aspect parameter asks for: 0 is Auto, 1..N are fixed.
+inline uint32_t EngineWidthFromParam( float value, uint32_t canvasWidth,
+									  uint32_t canvasHeight )
+{
+	const int index = OptionIndex( value, kEngineAspectCount + 1 );
+	if( index == 0 )
+		return AutoEngineWidth( canvasWidth, canvasHeight );
+	return kEngineAspects[ index - 1 ].width;
 }
 
 } // namespace resodoom

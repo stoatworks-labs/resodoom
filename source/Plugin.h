@@ -66,8 +66,12 @@ private:
 	/// or confirm they are already that size. Render thread only.
 	bool EnsurePicture( uint32_t width, uint32_t height, size_t frameBytes );
 
-	/// Absolute path to the engine library shipped in this bundle, or empty.
-	static std::string EngineLibraryPath();
+	/// Absolute path to this bundle's engine for a picture `width` pixels
+	/// wide, or empty if that engine is not here.
+	static std::string EngineLibraryPath( uint32_t width );
+
+	/// The engine the Aspect parameter asks for, against the current canvas.
+	uint32_t ChosenEngineWidth() const;
 
 	stagehand::Sidecar   mEngine;
 	stagehand::Presenter mPresenter;
@@ -107,6 +111,18 @@ private:
 	*/
 	uint32_t mPictureWidth  = 0;
 	uint32_t mPictureHeight = 0;
+
+	/*
+		What ChosenEngineWidth() said when the running engine was loaded, or 0
+		for none. Compared against a fresh answer to decide whether an Aspect
+		change or a new canvas needs a different engine.
+
+		The CHOICE, not the width that ended up loaded: if the 426 engine is
+		missing and the 320 one stood in, asking again still says 426 -- and
+		comparing against 320 would reload on every re-sent parameter, falling
+		back identically each time.
+	*/
+	uint32_t mEngineChoice = 0;
 
 	FFGLViewportStruct mViewport { 0, 0, 0, 0 };
 };

@@ -6,7 +6,8 @@
 	the artefact, through the arrangement it actually ships in, rather than a
 	relinked copy of the same code.
 
-	  resotest --iwad W.wad --check          the self-test
+	  resotest --iwad W.wad --check          the self-test, 320 engine
+	  resotest --iwad W.wad --check --engine libresodoom_engine_426.dylib --expect-width 426
 	  resotest --iwad W.wad --tics 200 --out /tmp/f.ppm
 	  resotest --iwad W.wad --tics 400 --seq /tmp/f_     a PPM per frame
 	  resotest --iwad W.wad --tics 35 --menu --out /tmp/m.ppm    the main menu
@@ -124,26 +125,46 @@
 	#define RESODOOM_ENGINE_DEFAULT_PATH "./libresodoom_engine" RD_LIB_EXT
 #endif
 
+#define RESODOOM_HEIGHT    200
+#define RESODOOM_MAX_WIDTH 1120 /* r_draw.c's MAXWIDTH: no engine can be wider */
+#define RESODOOM_MAX_BYTES ( RESODOOM_MAX_WIDTH * RESODOOM_HEIGHT * 4 )
+
 /*
-	The geometry the build asked for, checked against the engine's own
-	Describe() rather than assumed -- the two disagreeing is exactly the sort
-	of thing that produces a sheared picture and no error message.
+	The engine under test's geometry, from its own Describe() the moment it
+	loads -- resotest runs every engine the plugin ships, one per aspect, so
+	no width can be compiled in. Every frame buffer is sized for the widest
+	possible engine and read only as far as this says.
 
-	These come from CMake, the same two numbers the engine was compiled with,
-	so the check stays a real one at any width. Writing 320 here instead would
-	make it fail on a widescreen engine that was behaving perfectly; reading
-	the engine's own answer back would make it pass on one that was not.
+	**Checked against --expect-width, which is what keeps the geometry check a
+	real one.** Taking the engine's word for its own width and then asserting
+	it would pass an engine built at the wrong width; the caller says which
+	engine it meant, and that is what Describe() is held to.
 */
-#ifndef RESODOOM_SCREEN_WIDTH
-	#define RESODOOM_SCREEN_WIDTH 320
-#endif
-#ifndef RESODOOM_SCREEN_HEIGHT
-	#define RESODOOM_SCREEN_HEIGHT 200
-#endif
+static int    g_expectWidth = 320;
+static int    g_width       = 320;
+static int    g_height      = RESODOOM_HEIGHT;
+static size_t g_bytes       = 320 * RESODOOM_HEIGHT * 4;
 
-#define RESODOOM_WIDTH  RESODOOM_SCREEN_WIDTH
-#define RESODOOM_HEIGHT RESODOOM_SCREEN_HEIGHT
-#define RESODOOM_BYTES  ( RESODOOM_WIDTH * RESODOOM_HEIGHT * 4 )
+static void take_geometry( const StagehandSourceApi* api )
+{
+	StagehandInfo info;
+	memset( &info, 0, sizeof( info ) );
+	api->Describe( &info );
+
+	g_width  = (int)info.width;
+	g_height = (int)info.height;
+	g_bytes  = info.frameBytes;
+
+	/* An engine describing more than the buffer holds is already a failed
+	   geometry check; clamp so the reads that follow stay in bounds. */
+	if( g_bytes > RESODOOM_MAX_BYTES || g_width > RESODOOM_MAX_WIDTH
+		|| g_height > RESODOOM_HEIGHT )
+	{
+		g_width  = RESODOOM_MAX_WIDTH;
+		g_height = RESODOOM_HEIGHT;
+		g_bytes  = RESODOOM_MAX_BYTES;
+	}
+}
 
 static int g_failures = 0;
 static int g_checks   = 0;
@@ -165,7 +186,7 @@ typedef struct Frame
 {
 	uint32_t seq;
 	uint32_t tic;
-	uint8_t  pixels[ RESODOOM_BYTES ];
+	uint8_t  pixels[ RESODOOM_MAX_BYTES ];
 } Frame;
 
 /* ------------------------------------------------------------------ */
@@ -265,7 +286,7 @@ static void engine_close( EngineRef* e )
 static uint64_t digest( const Frame* f )
 {
 	uint64_t h = 1469598103934665603ull; /* FNV-1a */
-	for( size_t i = 0; i < RESODOOM_BYTES; ++i )
+	for( size_t i = 0; i < g_bytes; ++i )
 	{
 		h ^= f->pixels[ i ];
 		h *= 1099511628211ull;
@@ -365,14 +386,14 @@ static int write_ppm( const char* path, const Frame* f )
 		fprintf( stderr, "resotest: cannot write '%s'\n", path );
 		return 0;
 	}
-	fprintf( fp, "P6\n%d %d\n255\n", RESODOOM_WIDTH, RESODOOM_HEIGHT );
+	fprintf( fp, "P6\n%d %d\n255\n", g_width, g_height );
 
 	/* Published frames are bottom-up BGRA, shaped for a texture upload. PPM is
 	   top-down RGB, so un-flip here and the file looks like the screen. */
-	for( int y = RESODOOM_HEIGHT - 1; y >= 0; --y )
+	for( int y = g_height - 1; y >= 0; --y )
 	{
-		const uint8_t* row = f->pixels + (size_t)y * RESODOOM_WIDTH * 4;
-		for( int x = 0; x < RESODOOM_WIDTH; ++x )
+		const uint8_t* row = f->pixels + (size_t)y * g_width * 4;
+		for( int x = 0; x < g_width; ++x )
 		{
 			const uint8_t* px = row + (size_t)x * 4;
 			fputc( px[ 2 ], fp );
@@ -406,7 +427,7 @@ static void check_alpha_and_ink( const Frame* f )
 	uint32_t seen[ 16 ];
 	int      seenCount = 0;
 
-	for( size_t i = 0; i < RESODOOM_BYTES; i += 4 )
+	for( size_t i = 0; i < g_bytes; i += 4 )
 	{
 		if( f->pixels[ i + 3 ] != 0xFF )
 			opaque = 0;
@@ -451,6 +472,7 @@ static int self_test( const char* enginePath, const char* iwad )
 		return 1;
 	}
 	ok( 1, "a private copy of the engine loads and its ABI matches" );
+	take_geometry( e.api );
 
 	/* --- it describes itself the way the plugin expects ------------ */
 	{
@@ -458,9 +480,10 @@ static int self_test( const char* enginePath, const char* iwad )
 		memset( &info, 0, sizeof( info ) );
 		e.api->Describe( &info );
 
-		ok( info.width == RESODOOM_WIDTH && info.height == RESODOOM_HEIGHT,
-			"Describe reports Doom's geometry" );
-		ok( info.frameBytes == RESODOOM_BYTES, "...and its frame size" );
+		ok( (int)info.width == g_expectWidth && info.height == RESODOOM_HEIGHT,
+			"Describe reports the geometry this engine was built for" );
+		ok( info.frameBytes == (size_t)g_expectWidth * RESODOOM_HEIGHT * 4,
+			"...and its frame size" );
 		ok( info.rateNumerator == 35 && info.rateDenominator == 1,
 			"...and 35 Hz as an exact fraction" );
 
@@ -598,7 +621,8 @@ static void usage( void )
 			 "usage: resotest --iwad PATH [--check]\n"
 			 "                [--tics N] [--out FILE.ppm] [--seq PREFIX]\n"
 			 "                [--engine PATH] [--warp E M] [--skill N]\n"
-			 "                [--menu] [--keys CODE,CODE,...]\n" );
+			 "                [--menu] [--keys CODE,CODE,...]\n"
+			 "                [--expect-width N]   (with --engine; default 320)\n" );
 }
 
 int main( int argc, char** argv )
@@ -629,6 +653,8 @@ int main( int argc, char** argv )
 			tics = atoi( argv[ ++i ] );
 		else if( !strcmp( argv[ i ], "--skill" ) && i + 1 < argc )
 			skill = atoi( argv[ ++i ] );
+		else if( !strcmp( argv[ i ], "--expect-width" ) && i + 1 < argc )
+			g_expectWidth = atoi( argv[ ++i ] );
 		else if( !strcmp( argv[ i ], "--menu" ) )
 		{
 			if( keyCount < 32 )
@@ -665,6 +691,7 @@ int main( int argc, char** argv )
 	EngineRef e;
 	if( !engine_open( enginePath, &e ) )
 		return 1;
+	take_geometry( e.api ); /* a PPM is as wide as whichever engine this is */
 
 	if( !engine_start( &e, iwad, skill, episode, map ) )
 	{
