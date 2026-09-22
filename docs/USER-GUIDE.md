@@ -68,11 +68,32 @@ same thing deliberately.
 
 ## Making it look right
 
-**Scaling** decides how a 320x200 picture meets your composition.
+**Aspect** decides the shape of the game itself, and on a widescreen composition it is the setting
+that matters most.
 
 | | |
 | --- | --- |
-| **Fit** | The whole picture, pillarboxed. The default. |
+| **Auto** | Matches the composition. The default. |
+| **4:3** | The original 320x200 picture. |
+| **16:10** | Wider. |
+| **16:9** | Widescreen, for the usual HD and 4K outputs. |
+| **21:9** | Ultrawide, for LED strips and wide screens. |
+
+Anything wider than 4:3 is true widescreen: the view keeps its height and shows more of the level to
+either side, rather than stretching the 4:3 picture or cropping it. Menus, the title screen and the
+intermissions are the original artwork, centred with black either side.
+
+Doom's picture width is fixed when the engine is built, so the plugin carries one engine per aspect,
+and **changing Aspect restarts the game** -- but only when it needs a different engine. Choosing
+the one already running does nothing, and nor does Resolume re-sending the value when a
+composition loads. Auto follows the composition's resolution; changing that restarts the game too
+if the new shape wants a different engine.
+
+**Scaling** decides how the picture then meets your composition.
+
+| | |
+| --- | --- |
+| **Fit** | The whole picture, letterboxed or pillarboxed if its shape differs. The default. With Aspect on Auto there is usually nothing to box. |
 | **Fill** | Covers the frame, cropping the overhang. |
 | **Stretch** | Ignores the aspect entirely. |
 | **Integer** | Whole-number pixel multiples, so one Doom pixel is an exact square block. Falls back to Fit if the frame is too small. |
