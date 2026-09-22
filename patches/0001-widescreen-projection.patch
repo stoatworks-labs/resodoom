@@ -1,0 +1,63 @@
+diff --git a/doomgeneric/r_main.c b/doomgeneric/r_main.c
+index 22278fe..dfdd612 100644
+--- a/doomgeneric/r_main.c
++++ b/doomgeneric/r_main.c
+@@ -550,7 +550,11 @@ void R_InitTextureMapping (void)
+     //
+     // Calc focallength
+     //  so FIELDOFVIEW angles covers SCREENWIDTH.
+-    focallength = FixedDiv (centerxfrac,
++    // RESODOOM: from the held projection, not from centerxfrac. This is what
++    // widens the angle: pixels-per-angle stays at the 320-wide value, so a
++    // wider buffer simply covers more of the world. centerxfrac is still the
++    // screen centre below, where the mapping is anchored.
++    focallength = FixedDiv (projection,
+ 			    finetangent[FINEANGLES/4+FIELDOFVIEW/2] );
+ 	
+     for (i=0 ; i<FINEANGLES/2 ; i++)
+@@ -693,7 +697,17 @@ void R_ExecuteSetViewSize (void)
+     centerx = viewwidth/2;
+     centerxfrac = centerx<<FRACBITS;
+     centeryfrac = centery<<FRACBITS;
+-    projection = centerxfrac;
++
++    // RESODOOM: the projection is the scale, and it is held at the value a
++    // 320-wide view would have given. Vanilla writes `projection = centerxfrac`,
++    // which ties the scale to half the ACTUAL width -- so a wider buffer
++    // magnifies everything and crops the top and bottom instead of showing
++    // more to the sides. Holding the scale turns the extra columns into extra
++    // ANGLE, which is what widescreen means.
++    //
++    // At SCREENWIDTH 320 this reduces to viewwidth/2 -- exactly centerxfrac --
++    // at every view size, so the classic build is unchanged bit for bit.
++    projection = ((viewwidth * 320 / SCREENWIDTH) / 2) << FRACBITS;
+ 
+     if (!detailshift)
+     {
+@@ -727,7 +741,8 @@ void R_ExecuteSetViewSize (void)
+     {
+ 	dy = ((i-viewheight/2)<<FRACBITS)+FRACUNIT/2;
+ 	dy = abs(dy);
+-	yslope[i] = FixedDiv ( (viewwidth<<detailshift)/2*FRACUNIT, dy);
++	// RESODOOM: the floor/ceiling slope is the same scale as the walls.
++	yslope[i] = FixedDiv ( projection<<detailshift, dy);
+     }
+ 	
+     for (i=0 ; i<viewwidth ; i++)
+diff --git a/doomgeneric/r_plane.c b/doomgeneric/r_plane.c
+index ea1611c..c5561a1 100644
+--- a/doomgeneric/r_plane.c
++++ b/doomgeneric/r_plane.c
+@@ -197,8 +197,10 @@ void R_ClearPlanes (void)
+     angle = (viewangle-ANG90)>>ANGLETOFINESHIFT;
+ 	
+     // scale will be unit scale at SCREENWIDTH/2 distance
+-    basexscale = FixedDiv (finecosine[angle],centerxfrac);
+-    baseyscale = -FixedDiv (finesine[angle],centerxfrac);
++    // RESODOOM: the flat stepping is a scale too, so it follows projection
++    // rather than half the buffer width. Identical while the two are equal.
++    basexscale = FixedDiv (finecosine[angle],projection);
++    baseyscale = -FixedDiv (finesine[angle],projection);
+ }
+ 
+ 
