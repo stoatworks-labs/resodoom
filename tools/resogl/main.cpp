@@ -514,9 +514,30 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height )
 			( float( kEngineWidth ) / float( kEngineHeight ) ) * kDoomPixelAspect;
 
 		const float targetAspect = float( width ) / float( height );
-		const bool  pictureWider = pictureAspect > targetAspect;
 
-		if( pictureWider )
+		std::printf( "  ....  picture %dx%d at %.3f, frame %.3f, ink %.3f x %.3f\n",
+					 kEngineWidth, kEngineHeight, pictureAspect, targetAspect,
+					 coverX, coverY );
+
+		/*
+			Three cases, not two, and the third is the whole point of letting
+			the engine choose its own geometry: a picture built for the frame's
+			aspect has no bars on either axis.
+
+			Two lines of tolerance rather than one. 0.02 on the aspect is about
+			a pixel of slack at these sizes, and the ink extent is measured
+			against black -- so a frame whose edge column happens to be black
+			reads as very slightly short of full.
+		*/
+		const float aspectGap = pictureAspect > targetAspect ? pictureAspect - targetAspect
+															 : targetAspect - pictureAspect;
+
+		if( aspectGap < 0.02f )
+		{
+			ok( coverX > 0.98f && coverY > 0.98f,
+				"Fit fills both axes when the picture already matches the frame" );
+		}
+		else if( pictureAspect > targetAspect )
 		{
 			ok( coverX > 0.98f, "Fit fills the width when the picture is the wider one" );
 			ok( coverY < 0.99f, "...and letterboxes the height" );
@@ -653,6 +674,39 @@ int main( int argc, char** argv )
 		std::fprintf( stderr, "resogl: no OpenGL context\n" );
 		return 1;
 	}
+
+	/*
+		Refuse a context too old to run the presenter, rather than letting it
+		crash on the first null extension pointer.
+
+		Windows' stock opengl32 is a GL 1.1 software rasteriser with no shader
+		entry points at all, and that is what a machine with no GPU driver --
+		a VM, a CI runner -- hands back. Without this check the harness dies at
+		glCreateProgram with an access violation and no output whatsoever,
+		which reads like a bug in the plugin rather than a missing driver.
+	*/
+	/* Windows only: GLEW makes these function POINTERS, so testing one is
+	   meaningful. On macOS they are ordinary functions and the same test is
+	   a tautology the compiler rightly warns about. */
+#if defined( _WIN32 )
+	if( glCreateProgram == nullptr || glGenFramebuffers == nullptr )
+	{
+		const GLubyte* version  = glGetString( GL_VERSION );
+		const GLubyte* renderer = glGetString( GL_RENDERER );
+		std::fprintf( stderr,
+					  "resogl: this OpenGL cannot run the presenter -- no shader "
+					  "or framebuffer entry points.\n"
+					  "        renderer: %s\n"
+					  "        version:  %s\n"
+					  "        Put a software GL (Mesa's opengl32.dll and "
+					  "libgallium_wgl.dll) beside this\n"
+					  "        executable, or install a GPU driver.\n",
+					  renderer ? (const char*)renderer : "?",
+					  version ? (const char*)version : "?" );
+		context.Destroy();
+		return 1;
+	}
+#endif
 
 	int rc = 0;
 	if( doCheck )
