@@ -11,15 +11,23 @@ option( RESODOOM_BUILD_PLUGIN "Build the FFGL plugin"      ON )
 option( RESODOOM_BUILD_TOOLS  "Build the verification tools" ON )
 
 # ---------------------------------------------------------------------------
-# Picture geometry
+# Picture geometry -- one engine build per aspect
 #
-# Doom renders 320x200 and always has. Three separate things have to agree on
-# the number -- Doom's own renderer, doomgeneric's output buffer and the
-# engine's Describe() -- so it is written here once and pushed to all three.
+# Doom's buffer width is a compile-time constant that sizes static arrays all
+# through the renderer, so an engine is built for one width and cannot change
+# it. The plugin therefore ships one engine per aspect and its Aspect parameter
+# picks which to load -- Auto chooses the closest to the canvas. Three things
+# must agree on each width -- Doom's renderer, doomgeneric's output buffer and
+# the engine's Describe() -- and resodoom_add_engine() below pushes one number
+# to all three.
 #
 # At Doom's 5:6 pixel aspect the display aspect is (W / H) * 5/6, so:
 #
 #     320 -> 4:3      384 -> 16:10      426 -> 16:9      568 -> 21:9
+#
+# **This list and the plugin's Aspect options (Controls.h) are the same list.**
+# The 320 engine keeps the historical name, libresodoom_engine; the others are
+# suffixed with their width. verify.sh checks every one is in the bundle.
 #
 # **A wider buffer on its own would not be widescreen.** Doom's horizontal FOV
 # is pinned at 90 degrees and its scale is derived from half the buffer width
@@ -35,16 +43,18 @@ option( RESODOOM_BUILD_TOOLS  "Build the verification tools" ON )
 # beside a full-screen page. Only the WIDTH is handled; a buffer taller than
 # 200 would leave the 2D layer at the top.
 # ---------------------------------------------------------------------------
-set( RESODOOM_SCREEN_WIDTH  320 CACHE STRING "Doom's render width in pixels." )
-set( RESODOOM_SCREEN_HEIGHT 200 CACHE STRING "Doom's render height in pixels." )
+set( RESODOOM_ENGINE_WIDTHS 320 384 426 568 )
+set( RESODOOM_SCREEN_HEIGHT 200 )
 
-# columnofs[MAXWIDTH] and ylookup[MAXHEIGHT] in r_draw.c are the hard ceiling,
-# and overrunning them corrupts the heap rather than failing to build.
-if( RESODOOM_SCREEN_WIDTH GREATER 1120 OR RESODOOM_SCREEN_HEIGHT GREATER 832 )
-	message( FATAL_ERROR
-		"RESODOOM_SCREEN_WIDTH/HEIGHT exceed doomgeneric's MAXWIDTH/MAXHEIGHT "
-		"(1120x832), which r_draw.c indexes without bounds checks." )
-endif()
+# columnofs[MAXWIDTH] in r_draw.c is the hard ceiling, and overrunning it
+# corrupts the heap rather than failing to build.
+foreach( w ${RESODOOM_ENGINE_WIDTHS} )
+	if( w GREATER 1120 )
+		message( FATAL_ERROR
+			"engine width ${w} exceeds doomgeneric's MAXWIDTH (1120), which "
+			"r_draw.c indexes without bounds checks." )
+	endif()
+endforeach()
 
 if( APPLE AND NOT CMAKE_OSX_ARCHITECTURES )
 	# Universal by default. A single-arch build is a dev convenience and must
@@ -212,71 +222,94 @@ endforeach()
 # doomgeneric is one pile of file-scope globals with no instance handle, so two
 # layers running two games means two *loaded copies* -- the plugin dlopens a
 # uniquely-named copy of this file per instance. See AGENTS.md.
-add_library( resodoom_engine SHARED
-	${DG_SOURCES}
-	source/engine/EngineImpl.c
-)
-
-# Re-patch before compiling anything, on every build where a patch changed.
-add_dependencies( resodoom_engine doomgeneric_patched )
-
-target_include_directories( resodoom_engine PUBLIC
-	# The patched copy, so a patch that touches a HEADER is seen. DG_DIR is
-	# deliberately absent: with both on the path the pristine copy of a patched
-	# header could win, and the symptom would be a link error naming neither.
-	${DG_PATCHED}
-	${CMAKE_CURRENT_SOURCE_DIR}/source/engine
-	${CMAKE_CURRENT_SOURCE_DIR}/external/stagehand/include
-)
-
-target_compile_definitions( resodoom_engine PRIVATE
-	NORMALUNIX
-	_DEFAULT_SOURCE
-	# Doom's framebuffer 1:1. doomgeneric's own integer scaler becomes a
-	# straight copy, and every scaling decision belongs to the plugin's shader.
-	# Both pairs come from the one place so they cannot drift apart: a
-	# doomgeneric buffer narrower than Doom's renderer is a silent overrun.
-	DOOMGENERIC_RESX=${RESODOOM_SCREEN_WIDTH}
-	DOOMGENERIC_RESY=${RESODOOM_SCREEN_HEIGHT}
-	RESODOOM_SCREEN_WIDTH=${RESODOOM_SCREEN_WIDTH}
-	RESODOOM_SCREEN_HEIGHT=${RESODOOM_SCREEN_HEIGHT}
-)
-
-# Force-include the hook header into every translation unit, upstream's
-# included. This is what keeps the submodule pristine -- see ResodoomHooks.h.
 #
-# MSVC spells both of these differently, and a build that passes the clang
-# spelling to cl.exe does not fail on the flag -- it treats it as a source
-# file name and fails much later, complaining about the hook functions.
-if( MSVC )
-	target_compile_options( resodoom_engine PRIVATE
-		/FI${CMAKE_CURRENT_SOURCE_DIR}/source/engine/ResodoomHooks.h
-		/w
-		# <stdatomic.h> is behind a switch on MSVC and #errors without it.
-		# The engine's whole cross-thread story is atomics, so this is not
-		# optional -- it needs /std:c11 or later, which CMAKE_C_STANDARD gives.
-		/experimental:c11atomics
+# One per width. Nothing is shared between them: SCREENWIDTH is force-included
+# into every translation unit, so every object differs even where the source
+# never mentions it.
+function( resodoom_add_engine target width )
+	add_library( ${target} SHARED
+		${DG_SOURCES}
+		source/engine/EngineImpl.c
 	)
-else()
-	target_compile_options( resodoom_engine PRIVATE
-		-include ${CMAKE_CURRENT_SOURCE_DIR}/source/engine/ResodoomHooks.h
-		# Upstream is 1993 C and warns in the hundreds. Silencing it here keeps
-		# this project's own warnings readable, which is the point of warnings.
-		-w
-	)
-endif()
 
-set_target_properties( resodoom_engine PROPERTIES
-	C_VISIBILITY_PRESET hidden
-	OUTPUT_NAME "resodoom_engine"
-)
+	# Re-patch before compiling anything, on every build where a patch changed.
+	add_dependencies( ${target} doomgeneric_patched )
 
-if( APPLE )
-	set_target_properties( resodoom_engine PROPERTIES
-		INSTALL_NAME_DIR "@loader_path"
-		BUILD_WITH_INSTALL_NAME_DIR ON
+	target_include_directories( ${target} PUBLIC
+		# The patched copy, so a patch that touches a HEADER is seen. DG_DIR is
+		# deliberately absent: with both on the path the pristine copy of a
+		# patched header could win, and the symptom would be a link error
+		# naming neither.
+		${DG_PATCHED}
+		${CMAKE_CURRENT_SOURCE_DIR}/source/engine
+		${CMAKE_CURRENT_SOURCE_DIR}/external/stagehand/include
 	)
-endif()
+
+	target_compile_definitions( ${target} PRIVATE
+		NORMALUNIX
+		_DEFAULT_SOURCE
+		# Doom's framebuffer 1:1. doomgeneric's own integer scaler becomes a
+		# straight copy, and every scaling decision belongs to the plugin's
+		# shader. Both pairs come from the one argument so they cannot drift:
+		# a doomgeneric buffer narrower than Doom's renderer is a silent overrun.
+		DOOMGENERIC_RESX=${width}
+		DOOMGENERIC_RESY=${RESODOOM_SCREEN_HEIGHT}
+		RESODOOM_SCREEN_WIDTH=${width}
+		RESODOOM_SCREEN_HEIGHT=${RESODOOM_SCREEN_HEIGHT}
+	)
+
+	# Force-include the hook header into every translation unit, upstream's
+	# included. This is what keeps the submodule pristine -- see
+	# ResodoomHooks.h.
+	#
+	# MSVC spells both of these differently, and a build that passes the clang
+	# spelling to cl.exe does not fail on the flag -- it treats it as a source
+	# file name and fails much later, complaining about the hook functions.
+	if( MSVC )
+		target_compile_options( ${target} PRIVATE
+			/FI${CMAKE_CURRENT_SOURCE_DIR}/source/engine/ResodoomHooks.h
+			/w
+			# <stdatomic.h> is behind a switch on MSVC and #errors without it.
+			# The engine's whole cross-thread story is atomics, so this is not
+			# optional -- it needs /std:c11 or later, which CMAKE_C_STANDARD
+			# gives.
+			/experimental:c11atomics
+		)
+	else()
+		target_compile_options( ${target} PRIVATE
+			-include ${CMAKE_CURRENT_SOURCE_DIR}/source/engine/ResodoomHooks.h
+			# Upstream is 1993 C and warns in the hundreds. Silencing it here
+			# keeps this project's own warnings readable, which is the point.
+			-w
+		)
+	endif()
+
+	set_target_properties( ${target} PROPERTIES
+		C_VISIBILITY_PRESET hidden
+		OUTPUT_NAME "${target}"
+	)
+
+	if( APPLE )
+		set_target_properties( ${target} PROPERTIES
+			INSTALL_NAME_DIR "@loader_path"
+			BUILD_WITH_INSTALL_NAME_DIR ON
+		)
+	endif()
+endfunction()
+
+# The 320 engine keeps the historical target and file name, so everything that
+# names it -- the harnesses' defaults, the release and CI workflows -- still
+# finds it. The others carry their width: libresodoom_engine_426.dylib.
+set( RESODOOM_ENGINES "" )
+foreach( w ${RESODOOM_ENGINE_WIDTHS} )
+	if( w EQUAL 320 )
+		set( t resodoom_engine )
+	else()
+		set( t resodoom_engine_${w} )
+	endif()
+	resodoom_add_engine( ${t} ${w} )
+	list( APPEND RESODOOM_ENGINES ${t} )
+endforeach()
 
 # ---------------------------------------------------------------------------
 # The plugin
@@ -350,13 +383,21 @@ if( RESODOOM_BUILD_PLUGIN AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/ffgl/C
 		set( RESODOOM_ENGINE_DEST "$<TARGET_FILE_DIR:ResodoomSource>" )
 	endif()
 
+	# Every engine, one per aspect. A bundle missing one still loads, and the
+	# plugin falls back to the 320 engine for that aspect and says so in the
+	# log -- verify.sh is what notices.
+	set( RESODOOM_STAGE_COMMANDS
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${RESODOOM_ENGINE_DEST}" )
+	foreach( t ${RESODOOM_ENGINES} )
+		list( APPEND RESODOOM_STAGE_COMMANDS
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"$<TARGET_FILE:${t}>" "${RESODOOM_ENGINE_DEST}/" )
+	endforeach()
 	add_custom_command( TARGET ResodoomSource POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E make_directory "${RESODOOM_ENGINE_DEST}"
-		COMMAND ${CMAKE_COMMAND} -E copy_if_different
-			"$<TARGET_FILE:resodoom_engine>" "${RESODOOM_ENGINE_DEST}/"
-		COMMENT "Staging the engine into the bundle"
+		${RESODOOM_STAGE_COMMANDS}
+		COMMENT "Staging the engines into the bundle"
 	)
-	add_dependencies( ResodoomSource resodoom_engine )
+	add_dependencies( ResodoomSource ${RESODOOM_ENGINES} )
 
 	# The GL harness: the real plugin class through the real FFGL sequence in a
 	# headless core-profile context. The only thing that catches a shader that
@@ -380,13 +421,11 @@ if( RESODOOM_BUILD_PLUGIN AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/ffgl/C
 			endif()
 		endif()
 
-		add_dependencies( resogl resodoom_engine )
+		# Every engine: the Aspect checks load each of them through the plugin,
+		# which finds them beside the harness in the build tree.
+		add_dependencies( resogl ${RESODOOM_ENGINES} )
 		target_compile_definitions( resogl PRIVATE
 			RESODOOM_ENGINE_BUILD_PATH="$<TARGET_FILE:resodoom_engine>"
-			# See the note by kEngineWidth: the Fit checks compare against the
-			# picture this build actually produces.
-			RESODOOM_SCREEN_WIDTH=${RESODOOM_SCREEN_WIDTH}
-			RESODOOM_SCREEN_HEIGHT=${RESODOOM_SCREEN_HEIGHT}
 		)
 	endif()
 
@@ -417,12 +456,10 @@ if( RESODOOM_BUILD_TOOLS )
 	target_link_libraries( resotest PRIVATE ${CMAKE_DL_LIBS} )
 	# The harness loads the engine exactly as the plugin does, by path, so the
 	# thing under test is the shipped artefact and not a relinked copy of it.
-	add_dependencies( resotest resodoom_engine )
+	# It defaults to the 320 engine; --engine and --expect-width test the
+	# others, which is what verify.sh does for each.
+	add_dependencies( resotest ${RESODOOM_ENGINES} )
 	target_compile_definitions( resotest PRIVATE
 		RESODOOM_ENGINE_DEFAULT_PATH="$<TARGET_FILE:resodoom_engine>"
-		# The same geometry the engine was built with, so "does Describe() say
-		# what this build asked for" stays a real question at any width.
-		RESODOOM_SCREEN_WIDTH=${RESODOOM_SCREEN_WIDTH}
-		RESODOOM_SCREEN_HEIGHT=${RESODOOM_SCREEN_HEIGHT}
 	)
 endif()
