@@ -139,6 +139,10 @@ if( MSVC )
 	target_compile_options( resodoom_engine PRIVATE
 		/FI${CMAKE_CURRENT_SOURCE_DIR}/source/engine/ResodoomHooks.h
 		/w
+		# <stdatomic.h> is behind a switch on MSVC and #errors without it.
+		# The engine's whole cross-thread story is atomics, so this is not
+		# optional -- it needs /std:c11 or later, which CMAKE_C_STANDARD gives.
+		/experimental:c11atomics
 	)
 else()
 	target_compile_options( resodoom_engine PRIVATE
