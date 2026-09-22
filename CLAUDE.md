@@ -27,14 +27,18 @@ anything about what may be shipped. **No WAD is ever committed here.**
 - Skip pieces: `-DRESODOOM_BUILD_PLUGIN=OFF`, `-DRESODOOM_BUILD_TOOLS=OFF`
   (these are cached — re-running `cmake -B build` without them keeps the old
   value, so pass `=ON` explicitly to turn one back on)
-- Widescreen engine: `-DRESODOOM_SCREEN_WIDTH=426` (16:9; 384 = 16:10,
-  568 = 21:9). Also cached. The 3D view is true Hor+ and the 2D screens are
-  centred with black pillarboxes. Width only — the height stays 200.
+- **Four engines are built, one per aspect**: `libresodoom_engine` (320,
+  4:3) and `_384` (16:10), `_426` (16:9), `_568` (21:9). Doom's width is
+  compile-time, so each is a separate library; all are staged into the bundle
+  and the **Aspect** parameter picks one. The list is `RESODOOM_ENGINE_WIDTHS`
+  in CMakeLists.txt and `kEngineAspects` in Controls.h — keep them the same.
+  Wider engines are true Hor+ with the 2D screens centred. Height stays 200.
 
 ## Verify
 - Everything: `RESODOOM_TEST_IWAD=/path/to/freedoom1.wad tools/verify.sh`
   (without the variable it builds, checks symbols, and **skips** the rest)
-- The engine, no GL: `./build/resotest --iwad W.wad --check`
+- The engine, no GL: `./build/resotest --iwad W.wad --check` (the 320 one);
+  another: `--engine build/libresodoom_engine_426.dylib --expect-width 426`
 - The real plugin in a real GL context: `./build/resogl --iwad W.wad --check`
 - The other letterbox branch: `./build/resogl --iwad W.wad --check --size 720x720`
 - A frame as a PPM: `./build/resotest --iwad W.wad --tics 500 --out /tmp/f.ppm`
@@ -50,7 +54,13 @@ anything about what may be shipped. **No WAD is ever committed here.**
 `WAD`, `Mod WAD`, `Run`, `Restart`, `Speed`, `Skill`, `Episode`, `Map`,
 `Scaling` (Fit / Fill / Stretch / Integer), `Pixel Aspect`, `Smoothing`, then
 twelve controls in a **Controls** group — plain booleans, so Resolume
-MIDI-maps, keyboard-maps and automates them like anything else.
+MIDI-maps, keyboard-maps and automates them like anything else — then
+`Aspect` (Auto / 4:3 / 16:10 / 16:9 / 21:9), which picks the engine.
+
+**Parameters are addressed by index in saved compositions, so a new one goes
+at the end** (before the About block, which holds no state). That is why
+Aspect sits after the controls rather than beside Scaling: inserting it there
+would shift all twelve and misroute every saved MIDI mapping.
 
 ## Notes
 - **`doomgeneric_Create` does not loop.** It runs D_DoomMain plus one tick and

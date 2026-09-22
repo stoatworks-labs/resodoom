@@ -77,11 +77,25 @@ whole setup.
 | **Scaling** | Fit, Fill, Stretch, or Integer (whole-number pixel multiples). |
 | **Pixel Aspect** | On by default. Doom's 320x200 was always shown at 4:3. |
 | **Smoothing** | Off by default, and it should stay off. |
+| **Aspect** | *Auto* matches the composition; or pick 4:3, 16:10, 16:9 or 21:9. |
 
 The twelve **Controls** are plain boolean parameters, so Resolume MIDI-maps
 them, keyboard-maps them and automates them off the timeline like anything
 else. FFGL gives a plugin no keyboard access at all, so this is not a
 convenience — it is the only input path that exists.
+
+## True widescreen
+
+On a 16:9 composition the game is really widescreen — not the 4:3 picture
+stretched, and not pillarboxed: the view is the same height and you see more to
+either side. **Aspect** chooses how wide. *Auto* (the default) picks whichever
+matches the composition, and 4:3 gives the original back.
+
+Doom's picture width is fixed when the engine is compiled, so the plugin
+carries four engines, one per aspect, and changing Aspect restarts the game.
+Only a change that needs a different engine does: choosing the one already
+running does nothing. The menus, title screens and intermissions are the
+original 320-wide artwork, centred with black either side.
 
 ## Two layers, two games
 

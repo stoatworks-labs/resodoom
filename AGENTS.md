@@ -154,6 +154,39 @@ Read This! over E1M1, whose sides must be black and not the level.
 `wi_stuff.c`'s fake screen-sized patch is **Chocolate Doom reproducing
 vanilla's MAP33 crash on purpose**. It is left alone, and still crashes.
 
+**One engine per aspect, because the width cannot be changed at runtime.**
+`SCREENWIDTH` sizes static arrays all through the renderer, so an engine is
+compiled for one width. The plugin ships four — 320, 384, 426, 568 — and the
+Aspect parameter picks one; Auto takes the closest to the canvas by the log of
+the ratio, which treats twice as wide and half as wide as equally far. The
+list lives twice, `RESODOOM_ENGINE_WIDTHS` and `kEngineAspects`, and
+`verify.sh` checks every engine reaches the bundle. Two decisions that look
+arbitrary and are not:
+
+- **Auto ignores Pixel Aspect.** It matches the shape Doom is meant to be seen
+  at, so turning Pixel Aspect off never swaps the engine — which would restart
+  the game underneath the operator.
+- **Only a change of ENGINE reloads.** Resolume re-sends every value on
+  composition load and on undo; picking the aspect already running must do
+  nothing. The plugin remembers what it *chose*, not what loaded — if the 426
+  engine is missing and 320 stood in, comparing against 320 would reload on
+  every re-sent value and fall back identically each time.
+
+**Parameters are addressed by index in saved compositions, so new ones go at
+the end.** Aspect belongs beside Scaling by meaning and sits after the twelve
+controls instead: inserting it among the display settings would shift every
+control by one, and a controller mapped in an older composition would then
+drive the wrong buttons. Only the About block moved, and it holds no state a
+composition needs back.
+
+**A GL re-initialisation used to leave the layer black.** `DeInitGL` closes the
+engine, and nothing reopened it: the host re-sends the same WAD path, so
+`SetTextParameter` saw no change. `InitGL` now requests a load whenever a WAD
+is already chosen — which is also how Auto follows a change of canvas. That
+viewport is the ONLY size the plugin reads, deliberately: a host renders the
+same instance at other sizes for previews and thumbnails, and following the
+size bound at draw time would swap engines and restart the game mid-show.
+
 **`-include` is processed before the file's first line.** The hook header is
 force-included into every translation unit including the one that *implements*
 the hooks, so `#define ..._HOOKS_IMPL`-style guards arrive too late and the
@@ -282,7 +315,12 @@ and **skips loudly** rather than quietly passing without one.
 
 - **`resotest`** — the engine on the CPU, no graphics API anywhere. It loads
   the engine through the same private-copy dlopen the plugin uses, so what it
-  exercises is the shipped artefact. Twenty-three checks: the failure paths, that
+  exercises is the shipped artefact — **every** shipped artefact: `verify.sh`
+  runs it once per engine with `--engine` and `--expect-width`, and the second
+  is what keeps the geometry check honest. Taking an engine's word for its own
+  width and asserting it back would pass one built at the wrong width; handed
+  the wrong engine on purpose, the check fails, which is how it was confirmed
+  to be a real one. Twenty-three checks: the failure paths, that
   the engine never runs past its budget, that the undefined alpha is forced,
   that the frame is real picture rather than one flat colour, that a second
   `Open` in one copy is refused with the remedy, and that **two cold runs are
@@ -294,9 +332,18 @@ and **skips loudly** rather than quietly passing without one.
   uniform that does not resolve. Run at **two aspects**: a sign error in the
   Fit branch is invisible whenever the picture happens to be wider than the
   frame, and a square render is the cheapest way to make the other branch
-  matter. At a non-classic width there is a third case — picture and frame
-  already the same aspect, bars on neither axis — and the Fit assertions take
-  the engine's geometry from CMake so they stay honest at any width.
+  matter. The checks that predate the Aspect parameter pin it to 4:3, so they
+  test what they always did whatever canvas they run on; a third case —
+  picture and frame already the same aspect, bars on neither axis — belongs to
+  the wider engines. **The Aspect checks read which engine is running from
+  outside**, by the shape Fit gives its picture: each engine's aspect is
+  different, so the ink extents name it without reaching into the plugin.
+  They cover Auto on one canvas per engine, a fixed choice overriding Auto, a
+  swap on a running layer, and — the one that matters mid-show — that
+  choosing the aspect a layer already runs does *not* restart the game. That
+  last is caught the only way a restart shows from outside: the picture going
+  back to the title page after the game had moved on. It was confirmed real by
+  breaking the plugin to reload on every change and watching it fail.
   **The Fit checks measure the presented quad, not the art, and that only
   works because Doom never emits pure black.** `gammatable[0]` starts at 1, so
   palette black leaves the engine as (1,1,1) and counts as ink. On a
@@ -304,10 +351,12 @@ and **skips loudly** rather than quietly passing without one.
   rest is that near-black, which is why ink reads 0.998 there — the buffer is
   edge to edge, even though the picture in it is not. `--check --out F.ppm`
   writes the exact frame the Fit checks measured.
-- **The symbol checks** — that the engine exports exactly one entry point and
+- **The symbol checks** — that each engine exports exactly one entry point and
   none of doomgeneric's internals, that the bundle exports `plugMain`, and that
-  the engine was actually staged inside the bundle. A bundle missing the engine
-  loads fine and then refuses every WAD.
+  every engine was actually staged inside the bundle. A bundle missing the 320
+  engine loads fine and then refuses every WAD; one missing another falls back
+  to 4:3 for that aspect and says so in the log, which nobody would notice
+  without this check.
 
 **Two checks in `resogl` originally passed for the wrong reason**, and the
 shape of that mistake is worth keeping in mind for anything added later:
