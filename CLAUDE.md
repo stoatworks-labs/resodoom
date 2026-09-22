@@ -27,6 +27,9 @@ anything about what may be shipped. **No WAD is ever committed here.**
 - Skip pieces: `-DRESODOOM_BUILD_PLUGIN=OFF`, `-DRESODOOM_BUILD_TOOLS=OFF`
   (these are cached — re-running `cmake -B build` without them keeps the old
   value, so pass `=ON` explicitly to turn one back on)
+- Widescreen engine: `-DRESODOOM_SCREEN_WIDTH=426` (16:9; 384 = 16:10,
+  568 = 21:9). Also cached. The 3D view is true Hor+; the 2D screens (title,
+  menus, intermission) are still 320-wide art at the left edge.
 
 ## Verify
 - Everything: `RESODOOM_TEST_IWAD=/path/to/freedoom1.wad tools/verify.sh`
@@ -57,8 +60,11 @@ MIDI-maps, keyboard-maps and automates them like anything else.
 - **The engine thread needs an 8 MiB stack.** A pthread's 512 KiB default gives
   a SIGBUS in an innocent-looking leaf.
 - Upstream is a **pristine submodule**. Changes are made by force-including
-  `source/engine/ResodoomHooks.h`, which intercepts `exit` and the allocator.
-  `EngineImpl.c` must `#undef` those macros — `-include` runs before line 1.
+  `source/engine/ResodoomHooks.h`, which intercepts `exit`, the allocator and
+  `SCREENWIDTH`. `EngineImpl.c` must `#undef` those macros — `-include` runs
+  before line 1. An edit *inside* an upstream function cannot be intercepted;
+  those live in `patches/`, applied to a copy in the build tree and never to
+  the submodule. Each must be an **identity at 320x200** — see AGENTS.md.
 - The engine implements **stagehand's generic source ABI**, not a bespoke one.
   Options arrive as a key/value list, so adding a setting needs no ABI change.
 - **`pixelAspect` is pixel WIDTH over HEIGHT**, so Doom's is 5/6 and not 1.2.
