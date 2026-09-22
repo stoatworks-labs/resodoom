@@ -10,6 +10,38 @@ set( CMAKE_CXX_STANDARD_REQUIRED ON )
 option( RESODOOM_BUILD_PLUGIN "Build the FFGL plugin"      ON )
 option( RESODOOM_BUILD_TOOLS  "Build the verification tools" ON )
 
+# ---------------------------------------------------------------------------
+# Picture geometry
+#
+# Doom renders 320x200 and always has. Three separate things have to agree on
+# the number -- Doom's own renderer, doomgeneric's output buffer and the
+# engine's Describe() -- so it is written here once and pushed to all three.
+#
+# At Doom's 5:6 pixel aspect the display aspect is (W / H) * 5/6, so:
+#
+#     320 -> 4:3      384 -> 16:10      426 -> 16:9      568 -> 21:9
+#
+# **A wider buffer on its own is not widescreen.** Doom's horizontal FOV is
+# pinned at 90 degrees and its vertical scale is derived from half the buffer
+# width (`projection = centerxfrac` in r_main.c), so widening this zooms in
+# and crops the top and bottom rather than showing more to the sides. The 2D
+# layer does not move either: the status bar is one 320-wide patch drawn at
+# x=0. Both are the renderer patch, which is not done -- see AGENTS.md.
+#
+# What this knob IS good for today is proving that everything downstream of
+# the engine carries a non-320x200 picture correctly.
+# ---------------------------------------------------------------------------
+set( RESODOOM_SCREEN_WIDTH  320 CACHE STRING "Doom's render width in pixels." )
+set( RESODOOM_SCREEN_HEIGHT 200 CACHE STRING "Doom's render height in pixels." )
+
+# columnofs[MAXWIDTH] and ylookup[MAXHEIGHT] in r_draw.c are the hard ceiling,
+# and overrunning them corrupts the heap rather than failing to build.
+if( RESODOOM_SCREEN_WIDTH GREATER 1120 OR RESODOOM_SCREEN_HEIGHT GREATER 832 )
+	message( FATAL_ERROR
+		"RESODOOM_SCREEN_WIDTH/HEIGHT exceed doomgeneric's MAXWIDTH/MAXHEIGHT "
+		"(1120x832), which r_draw.c indexes without bounds checks." )
+endif()
+
 if( APPLE AND NOT CMAKE_OSX_ARCHITECTURES )
 	# Universal by default. A single-arch build is a dev convenience and must
 	# be asked for: -DCMAKE_OSX_ARCHITECTURES=arm64
@@ -89,18 +121,33 @@ target_compile_definitions( resodoom_engine PRIVATE
 	_DEFAULT_SOURCE
 	# Doom's framebuffer 1:1. doomgeneric's own integer scaler becomes a
 	# straight copy, and every scaling decision belongs to the plugin's shader.
-	DOOMGENERIC_RESX=320
-	DOOMGENERIC_RESY=200
+	# Both pairs come from the one place so they cannot drift apart: a
+	# doomgeneric buffer narrower than Doom's renderer is a silent overrun.
+	DOOMGENERIC_RESX=${RESODOOM_SCREEN_WIDTH}
+	DOOMGENERIC_RESY=${RESODOOM_SCREEN_HEIGHT}
+	RESODOOM_SCREEN_WIDTH=${RESODOOM_SCREEN_WIDTH}
+	RESODOOM_SCREEN_HEIGHT=${RESODOOM_SCREEN_HEIGHT}
 )
 
 # Force-include the hook header into every translation unit, upstream's
 # included. This is what keeps the submodule pristine -- see ResodoomHooks.h.
-target_compile_options( resodoom_engine PRIVATE
-	-include ${CMAKE_CURRENT_SOURCE_DIR}/source/engine/ResodoomHooks.h
-	# Upstream is 1993 C and warns in the hundreds. Silencing it here keeps
-	# this project's own warnings readable, which is the point of warnings.
-	-w
-)
+#
+# MSVC spells both of these differently, and a build that passes the clang
+# spelling to cl.exe does not fail on the flag -- it treats it as a source
+# file name and fails much later, complaining about the hook functions.
+if( MSVC )
+	target_compile_options( resodoom_engine PRIVATE
+		/FI${CMAKE_CURRENT_SOURCE_DIR}/source/engine/ResodoomHooks.h
+		/w
+	)
+else()
+	target_compile_options( resodoom_engine PRIVATE
+		-include ${CMAKE_CURRENT_SOURCE_DIR}/source/engine/ResodoomHooks.h
+		# Upstream is 1993 C and warns in the hundreds. Silencing it here keeps
+		# this project's own warnings readable, which is the point of warnings.
+		-w
+	)
+endif()
 
 set_target_properties( resodoom_engine PROPERTIES
 	C_VISIBILITY_PRESET hidden

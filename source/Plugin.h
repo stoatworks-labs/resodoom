@@ -62,6 +62,10 @@ private:
 	/// Push every changed button through as a key edge.
 	void SendInput();
 
+	/// Build the presenter and the staging buffer for a picture of this size,
+	/// or confirm they are already that size. Render thread only.
+	bool EnsurePicture( uint32_t width, uint32_t height, size_t frameBytes );
+
 	/// Absolute path to the engine library shipped in this bundle, or empty.
 	static std::string EngineLibraryPath();
 
@@ -90,9 +94,19 @@ private:
 	/// button scrolls at the composition's frame rate.
 	bool mButtonWasDown[ PT_COUNT ] = { false };
 
-	/// One frame's staging, allocated once. Too big for the render thread's
-	/// stack and too big to allocate per frame.
+	/// One frame's staging, sized to whatever the loaded engine publishes. Too
+	/// big for the render thread's stack and too big to allocate per frame.
 	std::vector< uint8_t > mFrame;
+
+	/*
+		What the presenter and mFrame are currently built for.
+
+		The engine decides this, not the plugin -- an engine compiled for a
+		widescreen buffer says so through Describe() and everything here
+		follows. Zero until InitGL has run.
+	*/
+	uint32_t mPictureWidth  = 0;
+	uint32_t mPictureHeight = 0;
 
 	FFGLViewportStruct mViewport { 0, 0, 0, 0 };
 };
