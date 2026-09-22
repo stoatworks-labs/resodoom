@@ -1,0 +1,23 @@
+diff --git a/doomgeneric/r_main.c b/doomgeneric/r_main.c
+--- a/doomgeneric/r_main.c
++++ b/doomgeneric/r_main.c
+@@ -660,6 +660,19 @@
+   int		detail )
+ {
+     setsizeneeded = true;
++
++    // RESODOOM: a buffer that is not 320x200 only works at view size 11.
++    // Any smaller size makes the view 320 wide or less inside a wider buffer,
++    // and at size 10 the border R_FillBackScreen then draws lands at y=-3 --
++    // an I_Error before the next frame. The engine starts at 11, but Doom's
++    // own Options menu has a Screen Size slider, and a MIDI-mapped Menu and
++    // Turn control reach it; this is the one place every route passes through.
++    // The slider still moves; the view does not.
++    //
++    // At 320x200 the condition is false and this is the original line.
++    if (SCREENWIDTH != 320 || SCREENHEIGHT != 200)
++        blocks = 11;
++
+     setblocks = blocks;
+     setdetail = detail;
+ }
