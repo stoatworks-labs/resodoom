@@ -170,7 +170,13 @@ arbitrary and are not:
   composition load and on undo; picking the aspect already running must do
   nothing. The plugin remembers what it *chose*, not what loaded — if the 426
   engine is missing and 320 stood in, comparing against 320 would reload on
-  every re-sent value and fall back identically each time.
+  every re-sent value and fall back identically each time. **And the request
+  is SET OR CLEARED, in its own flag** (`mPendingAspectLoad`): a MIDI knob
+  swept through 4:3 and back before the next frame must withdraw the reload
+  its first step asked for. Folded into `mPendingLoad` it could not — that
+  flag also carries WAD, Skill and re-init requests — and the game restarted
+  for a choice that ended where it began. CodeRabbit caught it on #3; the
+  check for it failed first, then passed with the fix.
 
 **Parameters are addressed by index in saved compositions, so new ones go at
 the end.** Aspect belongs beside Scaling by meaning and sits after the twelve
@@ -339,9 +345,10 @@ and **skips loudly** rather than quietly passing without one.
   outside**, by the shape Fit gives its picture: each engine's aspect is
   different, so the ink extents name it without reaching into the plugin.
   They cover Auto on one canvas per engine, a fixed choice overriding Auto, a
-  swap on a running layer, and — the one that matters mid-show — that
-  choosing the aspect a layer already runs does *not* restart the game. That
-  last is caught the only way a restart shows from outside: the picture going
+  swap on a running layer, and — the ones that matter mid-show — that
+  choosing the aspect a layer already runs does *not* restart the game, nor
+  does a change undone before the next frame. Those are caught the only way a
+  restart shows from outside: the picture going
   back to the title page after the game had moved on. It was confirmed real by
   breaking the plugin to reload on every change and watching it fail.
   **The Fit checks measure the presented quad, not the art, and that only
