@@ -97,12 +97,80 @@ The failure is a SIGBUS on the *first instruction* of whatever function
 overran, with a stack too far gone for the debugger to unwind past frame 0: a
 backtrace that points at an innocent leaf and says nothing about stacks.
 
+**Any buffer that is not 320x200 must run at view size 11.** `R_FillBackScreen`
+skips the view border only when `scaledviewwidth == SCREENWIDTH`, and the
+default view size of 10 makes the view 320 wide *whatever the buffer is* — so at
+320 the test passes by coincidence, and at any other width the border is drawn
+around a view that was inset horizontally but not vertically. The first border
+patch lands at y=-3 and `V_DrawPatch`'s bounds check turns it into an `I_Error`
+*before the first frame is published*:
+
+    Bad V_DrawPatch x=53 y=-3 patch.width=8 patch.height=3
+
+From outside: the title screen renders, and the layer goes black the moment the
+game enters a level and stays black, reason only in the log. `EngineImpl.c`
+forces `screenblocks = 11` for any non-classic geometry, before
+`doomgeneric_Create` — which renders a frame of its own before returning, so
+setting it afterwards is too late.
+
+**That alone is not enough, because the operator can undo it.** Doom's Options
+menu has a Screen Size slider, and the mapped Menu, Confirm and Turn controls
+reach it; one notch down re-enters the crash mid-show. `patches/0002` clamps
+inside `R_SetViewSize`, the one function every route to a new view size passes
+through. The slider still moves; the view does not.
+
+**A wider buffer alone is Vert−, not widescreen.** Doom's horizontal field of
+view is fixed at 90 degrees and its scale is derived from half the *actual* view
+width (`projection = centerxfrac`), so 426 columns show the same 90 degrees as
+320 did, magnified, with the top and bottom cropped. It fills a 16:9 canvas and
+shows less of the world. `patches/0001` holds the projection at the value a
+320-wide view gives and derives `focallength` from it, so the extra columns
+become extra *angle*: 106 degrees across at 426, vertical unchanged. The four
+lines it touches are the places `centerxfrac` was being used as a **scale**;
+where it is the screen **centre** — the angle mapping's anchor, sprite and
+weapon positions — it is left alone, and those were already right.
+
 **`-include` is processed before the file's first line.** The hook header is
 force-included into every translation unit including the one that *implements*
 the hooks, so `#define ..._HOOKS_IMPL`-style guards arrive too late and the
 include guard then makes that file's own `#include` a no-op. Every hook calls
 itself. `EngineImpl.c` undoes the macros with explicit `#undef`s as its first
 real act; that is not tidiness, it is the fix.
+
+**Interception reaches names, not function bodies — which is why `patches/`
+exists.** Everything the hook header does is redefine something upstream
+*refers to*: `exit`, the allocator, `SCREENWIDTH` (by including `i_video.h`
+first to trip its include guard, then redefining). An edit *inside* an upstream
+function — the widescreen projection is four such lines — cannot be expressed
+that way, so it is carried as a patch applied to a **copy** in the build tree.
+The submodule stays byte-identical to upstream, which is the property the
+pristine rule exists for. Four silent traps in that machinery, all fixed and
+all commented in `CMakeLists.txt`:
+
+- The patch step deletes the tree it patches, so it must not run *from* it.
+- **`git apply` skips any path its repository ignores** — `build/` is
+  gitignored, so inside this checkout it prints "Skipped patch", exits 1, and
+  looks exactly like a corrupt patch. `GIT_CEILING_DIRECTORIES` stops git
+  finding a repository at all.
+- **A plain `file(GLOB)` never sees a new patch.** It is evaluated once at
+  configure time, so a patch added later is not a dependency and is never
+  applied — the build succeeds and the change is simply absent.
+  `CONFIGURE_DEPENDS` re-checks it.
+- **A deleted patch stays applied.** It stops being a dependency, nothing looks
+  out of date, and its changes sit in the build tree indefinitely. The patch
+  *set* is written to a file that only changes when the set does, and the
+  patch step depends on that too.
+
+Patches stack in name order, so each is generated against the tree with every
+earlier one applied, not against pristine upstream.
+
+A patch must be an **identity at 320x200**. Check it the only way that means
+anything — hash a warped frame from the classic build before and after:
+
+    ./build/resotest --iwad W.wad --warp 1 1 --tics 120 --out before.ppm
+    # apply the patch, rebuild
+    ./build/resotest --iwad W.wad --warp 1 1 --tics 120 --out after.ppm
+    shasum before.ppm after.ppm   # must match
 
 **The X in XRGB8888 is undefined, not zero,** and Doom leaves stale bits there.
 Copied through, Resolume gets a mostly-transparent layer, which against a dark
@@ -197,11 +265,14 @@ and **skips loudly** rather than quietly passing without one.
   byte-identical** — which is the check that catches the clock drifting
   anywhere near real time.
 - **`resogl`** — the **real plugin class** through the real FFGL sequence in a
-  headless CGL 4.1 core context. The only thing that catches a shader that will
-  not compile or a uniform that does not resolve. Run at **two aspects**: a
-  sign error in the Fit branch is invisible whenever the picture happens to be
-  wider than the frame, and a square render is the cheapest way to make the
-  other branch matter.
+  headless 4.1 core context: CGL on macOS, WGL behind a hidden window on
+  Windows. The only thing that catches a shader that will not compile or a
+  uniform that does not resolve. Run at **two aspects**: a sign error in the
+  Fit branch is invisible whenever the picture happens to be wider than the
+  frame, and a square render is the cheapest way to make the other branch
+  matter. At a non-classic width there is a third case — picture and frame
+  already the same aspect, bars on neither axis — and the Fit assertions take
+  the engine's geometry from CMake so they stay honest at any width.
 - **The symbol checks** — that the engine exports exactly one entry point and
   none of doomgeneric's internals, that the bundle exports `plugMain`, and that
   the engine was actually staged inside the bundle. A bundle missing the engine
@@ -215,6 +286,17 @@ have passed whatever the code did. Anything asserting about motion must first
 wait for motion; anything asserting two instances differ must make them
 genuinely different (they now warp to different levels), because the engine is
 deterministic and two copies given the same input are *supposed* to match.
+
+**On Windows**, both suites build under MSVC and run — first done 2026-09-22 on
+winlab, which is a QEMU VM with no GPU. Its stock `opengl32.dll` is a GL 1.1
+rasteriser with no shader entry points; `resogl` refuses it with a message
+rather than crashing. Resolume Arena ships Mesa llvmpipe as `opengl32.dll` plus
+`libgallium_wgl.dll` in its install folder, and copying those two beside
+`resogl.exe` gives a real 4.1 core context. The Windows-only traps found on the
+way are commented where they live: FFGL.h defines `NOUSER` before including
+`windows.h` (so anything needing `CreateWindowExA` must include `windows.h`
+*first*), the SDK's `boolean` collides with Doom's unless `WIN32_LEAN_AND_MEAN`,
+and `<stdatomic.h>` needs `/experimental:c11atomics`.
 
 **Host verification is Allan's, not an agent's.** Driving the Resolume GUI from
 a session is unreliable. **Nothing here has been loaded into Resolume.** The
