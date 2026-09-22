@@ -63,9 +63,21 @@
 	Doom's own geometry and rate. These used to live in a bespoke header shared
 	with the plugin; now the plugin asks through Describe(), so they belong
 	here with the engine that actually decides them.
+
+	The geometry comes from the build -- the same two numbers that reach Doom's
+	renderer and doomgeneric's output buffer, set once in CMakeLists.txt. The
+	fallbacks are Doom's own, so this file still compiles if it is ever built
+	outside that project.
 */
-#define RESODOOM_WIDTH   320
-#define RESODOOM_HEIGHT  200
+#ifndef RESODOOM_SCREEN_WIDTH
+	#define RESODOOM_SCREEN_WIDTH 320
+#endif
+#ifndef RESODOOM_SCREEN_HEIGHT
+	#define RESODOOM_SCREEN_HEIGHT 200
+#endif
+
+#define RESODOOM_WIDTH   RESODOOM_SCREEN_WIDTH
+#define RESODOOM_HEIGHT  RESODOOM_SCREEN_HEIGHT
 #define RESODOOM_BYTES   ( RESODOOM_WIDTH * RESODOOM_HEIGHT * 4 )
 #define RESODOOM_TICRATE 35
 
@@ -76,6 +88,12 @@
 	than they are wide -- and the ratio of a pixel that is taller than it is
 	wide is less than one. Writing 1.2 here gives a 1.92 display aspect, which
 	is wider than 16:9, and every face in the game comes out stretched.
+
+	**It does not move with the buffer width.** A Doom pixel is the same shape
+	however many of them there are, and the display aspect follows from the
+	count: (W / H) * 5/6 is 4:3 at 320 wide and 16:9 at 426. Scaling this to
+	"correct" for a wider buffer corrects a second time for something the
+	arithmetic has already handled.
 */
 #define RESODOOM_PIXEL_ASPECT ( 5.0f / 6.0f )
 

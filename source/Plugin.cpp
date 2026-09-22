@@ -19,6 +19,18 @@ constexpr const char* kEngineLeaf = "libresodoom_engine.dylib";
 constexpr const char* kEngineLeaf = "libresodoom_engine.so";
 #endif
 
+/*
+	What the presenter stands by at before any engine exists.
+
+	InitGL runs before a WAD has been chosen, and the shader has to be built by
+	then or the first frame after choosing one is missed -- but the size is not
+	known until an engine has been asked. Doom's own geometry is the honest
+	guess; anything else reports itself through Describe() and the presenter is
+	rebuilt to match.
+*/
+constexpr uint32_t kStandbyWidth  = 320;
+constexpr uint32_t kStandbyHeight = 200;
+
 } // namespace
 
 std::string ResodoomPlugin::EngineLibraryPath()
@@ -181,14 +193,46 @@ FFResult ResodoomPlugin::InitGL( const FFGLViewportStruct* vp )
 									   : "unknown" ) );
 
 	/*
-		The picture size comes from the engine, but the engine is not loaded
-		until a WAD is chosen -- and the shader has to exist before then, or
-		the first frame after choosing one is missed. Doom's geometry is fixed,
-		so the presenter is built at that size and the engine's Describe() is
-		checked against it when one does load.
+		Built at the standby size, because the engine that decides the real one
+		is not loaded until a WAD is chosen and the shader has to exist before
+		then. ApplyPendingLoad rebuilds it the moment an engine says otherwise.
 	*/
+	if( !EnsurePicture( kStandbyWidth, kStandbyHeight,
+						size_t( kStandbyWidth ) * kStandbyHeight * 4 ) )
+	{
+		DeInitGL();
+		return FF_FAIL;
+	}
+
+	mViewport = *vp;
+	return FF_SUCCESS;
+}
+
+/*
+	Presenter::Create destroys whatever it was holding before it builds, so
+	this is a resize rather than a leak when the size really has changed -- and
+	a no-op when it has not, which is every call but the first and the ones
+	that follow a load.
+
+	**Sized by frameBytes, not width * height * 4.** The ABI carries the
+	packing explicitly so a host need not assume it, and Frame() measures the
+	buffer it is handed against exactly that number: derive it independently
+	and a source that ever pads its rows writes past the end of this vector.
+*/
+bool ResodoomPlugin::EnsurePicture( uint32_t width, uint32_t height, size_t frameBytes )
+{
+	if( width == 0 || height == 0 || frameBytes == 0 )
+		return false;
+
+	if( width == mPictureWidth && height == mPictureHeight )
+	{
+		if( mFrame.size() < frameBytes )
+			mFrame.assign( frameBytes, 0 );
+		return true;
+	}
+
 	std::string error;
-	if( !mPresenter.Create( 320, 200, error ) )
+	if( !mPresenter.Create( width, height, error ) )
 	{
 		// The GL strings go next to the failure because a shader that builds on
 		// one machine and not another is a driver answer, not a source answer.
@@ -197,13 +241,18 @@ FFResult ResodoomPlugin::InitGL( const FFGLViewportStruct* vp )
 		stagehand::diag::error( "presenter failed on "
 								+ std::string( vendor ? (const char*)vendor : "?" ) + " / "
 								+ ( renderer ? (const char*)renderer : "?" ) + ": " + error );
-		DeInitGL();
-		return FF_FAIL;
+
+		// Nothing is presentable now, and saying so stops ProcessOpenGL
+		// drawing through a texture that was just destroyed.
+		mPictureWidth  = 0;
+		mPictureHeight = 0;
+		return false;
 	}
 
-	mFrame.assign( size_t( 320 ) * 200 * 4, 0 );
-	mViewport = *vp;
-	return FF_SUCCESS;
+	mFrame.assign( frameBytes, 0 );
+	mPictureWidth  = width;
+	mPictureHeight = height;
+	return true;
 }
 
 FFResult ResodoomPlugin::DeInitGL()
@@ -213,6 +262,8 @@ FFResult ResodoomPlugin::DeInitGL()
 
 	mFrame.clear();
 	mFrame.shrink_to_fit();
+	mPictureWidth  = 0;
+	mPictureHeight = 0;
 	mLoadedIwad.clear();
 	mLoadedPwad.clear();
 
@@ -272,6 +323,26 @@ void ResodoomPlugin::ApplyPendingLoad()
 		mLoadFailed = true;
 		return;
 	}
+
+	/*
+		The engine's geometry, not this plugin's. Open() fills Info() from the
+		source's Describe() and refuses a source that reports nothing usable,
+		so by here the numbers are known good -- and a 320x200 engine and a
+		widescreen one differ by nothing more than what they answer here.
+	*/
+	const StagehandInfo& info = mEngine.Info();
+	if( !EnsurePicture( info.width, info.height, info.frameBytes ) )
+	{
+		// The engine is fine; this machine cannot present what it produces.
+		// Closing it keeps a running game from drawing into a dead texture.
+		stagehand::diag::error( "the engine's picture could not be presented" );
+		mEngine.Close();
+		mLoadFailed = true;
+		return;
+	}
+
+	stagehand::diag::info( "engine picture " + std::to_string( info.width ) + "x"
+						   + std::to_string( info.height ) );
 	mLoadFailed = false;
 }
 
@@ -358,8 +429,8 @@ FFResult ResodoomPlugin::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 						  : 1.0f;
 
 	float sx = 1.0f, sy = 1.0f;
-	stagehand::ComputeFit( FitFromParam( mParams[ PT_SCALING ] ), width, height, 320, 200,
-						   par, sx, sy );
+	stagehand::ComputeFit( FitFromParam( mParams[ PT_SCALING ] ), width, height,
+						   mPictureWidth, mPictureHeight, par, sx, sy );
 
 	mPresenter.Draw( sx, sy );
 	return FF_SUCCESS;
