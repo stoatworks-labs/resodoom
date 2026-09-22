@@ -104,6 +104,13 @@ extern void doomgeneric_Create( int argc, char** argv );
 extern void doomgeneric_Tick( void );
 extern uint32_t* DG_ScreenBuffer;
 
+/* Doom's view size, 3 to 11. Declared rather than included for the same
+   reason: m_menu.h drags in most of the engine's headers. */
+extern int screenblocks;
+
+#define RESODOOM_CLASSIC_GEOMETRY \
+	( RESODOOM_WIDTH == 320 && RESODOOM_HEIGHT == 200 )
+
 /* ------------------------------------------------------------------ */
 /* Allocation registry                                                 */
 /* ------------------------------------------------------------------ */
@@ -610,6 +617,34 @@ static void engine_thread( void )
 	int jumped = setjmp( g.escape );
 	if( jumped == 0 )
 	{
+#if !RESODOOM_CLASSIC_GEOMETRY
+		/*
+			**A buffer that is not 320x200 must run at view size 11, and that
+			is a correctness fix rather than a preference.**
+
+			`R_FillBackScreen` draws Doom's chiselled border around the 3D view
+			and skips the whole job when `scaledviewwidth == SCREENWIDTH`. At
+			the default view size of 10 the view is 320 wide whatever the
+			buffer is, so at 320 the test passes and no border is drawn -- and
+			at any other width it fails, the border IS drawn, and it is drawn
+			around a view that was inset horizontally but not vertically. The
+			first patch lands at y=-3 and V_DrawPatch's bounds check turns that
+			into an I_Error before the first frame:
+
+			  Bad V_DrawPatch x=53 y=-3 patch.width=8 patch.height=3
+
+			The layer goes black on entering any level, with the reason only in
+			the log. Size 11 is the full-screen view, which makes the early-out
+			fire again -- and is what a wider buffer was asked for anyway,
+			since the alternative is Doom's 320-wide view pillarboxed inside it.
+
+			Set here rather than after startup because `doomgeneric_Create`
+			renders a frame of its own before it returns, so the error happens
+			inside it.
+		*/
+		screenblocks = 11;
+#endif
+
 		/*
 			doomgeneric's shape, which is not the one the name suggests:
 			`doomgeneric_Create` does the whole of D_DoomMain AND one tick,
