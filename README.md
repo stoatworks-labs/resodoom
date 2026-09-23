@@ -33,21 +33,31 @@ what you want from a layer nobody is holding a controller for.
 
 ## Download
 
-**[v0.2.0](https://github.com/stoatworks-labs/resodoom/releases/tag/v0.2.0)** — prebuilt for macOS. Pick your platform:
+**[v0.2.2](https://github.com/stoatworks-labs/resodoom/releases/tag/v0.2.2)** — prebuilt for macOS and Windows. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image | [`resodoom-0.2.0-macos-universal.dmg`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.2.0/resodoom-0.2.0-macos-universal.dmg) | 2.4 MB |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`resodoom-0.2.2-macos-universal.dmg`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.2.2/resodoom-0.2.2-macos-universal.dmg) | 2.4 MB |
 | Universal (Apple Silicon + Intel) · .zip archive | [`resodoom-macos-universal.zip`](https://github.com/stoatworks-labs/resodoom/releases/latest/download/resodoom-macos-universal.zip) | 2.2 MB |
+
+</details>
+
+<details>
+<summary><b>Windows</b> — x64</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| x64 · .exe installer | [`resodoom-0.2.2-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.2.2/resodoom-0.2.2-windows-x86_64-setup.exe) | 495 KB |
+| x64 · .zip archive | [`resodoom-windows-x86_64.zip`](https://github.com/stoatworks-labs/resodoom/releases/latest/download/resodoom-windows-x86_64.zip) | 935 KB |
 
 </details>
 
 All builds, checksums and release notes: [github.com/stoatworks-labs/resodoom/releases](https://github.com/stoatworks-labs/resodoom/releases).
 
-macOS builds are signed and notarised by Apple, so they open normally — no Gatekeeper warning and no quarantine step.
+macOS builds are signed and notarised and open normally. The Windows builds are unsigned, so SmartScreen warns once.
 
 <!-- downloads:end -->
 
@@ -67,8 +77,7 @@ and it loads them from its own folder. Resolume's scan skips them without
 complaint. From the zip, copy all five. The installer puts them in
 `C:\Program Files\Resodoom` unless you pick Resolume's Extra Effects folder on
 its folder page, which is the easier route; if you keep the default, add that
-folder to Resolume's plugin folders in its preferences. The Windows downloads
-are unsigned, so SmartScreen warns once.
+folder to Resolume's plugin folders in its preferences.
 
 ## Building
 
