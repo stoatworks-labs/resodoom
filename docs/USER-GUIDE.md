@@ -21,13 +21,31 @@ from a layer nobody is holding a controller for.
 > against a real WAD with no graphics API, and the real plugin through the real FFGL sequence in a
 > headless GL context, at two aspect ratios — and it has been **run in Resolume Arena 7.27.1 on
 > macOS**: the inspector, the controls, Aspect and Auto all behave as this guide describes. What
-> nobody has tried yet is a hardware controller mapped onto the controls. The **Windows build
-> passes the same checks, and runs in Arena on Windows too**, but no Windows binary is
-> published yet, and the **Linux branch has never been built**.
+> nobody has tried yet is a hardware controller mapped onto the controls. **Windows builds ship
+> from v0.2.2.** They pass the same checks and run in Arena, but so far only in a Windows virtual
+> machine with software OpenGL and no graphics card; nobody has run one on a Windows PC with a real
+> GPU yet. The **Linux branch has never been built**.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
 
 ---
+
+## Installing
+
+```
+macOS    ~/Documents/Resolume Arena/Extra Effects/Resodoom.bundle
+Windows  %USERPROFILE%\Documents\Resolume Arena\Extra Effects\
+```
+
+Avenue uses the same layout under its own folder name. Restart Resolume afterwards. The macOS
+downloads are signed and notarised. The Windows ones are unsigned, so SmartScreen warns once.
+
+**On Windows, keep the five DLLs together.** `Resodoom.dll` is the plugin, and the four
+`resodoom_engine*.dll` files are its engines, one per aspect. It loads them from its own folder,
+and Resolume's scan skips them without complaint. From the zip, copy all five. The installer puts
+them in `C:\Program Files\Resodoom` unless you choose Resolume's Extra Effects folder on its folder
+page. That is the easier route. If you keep the default, add that folder to Resolume's plugin
+folders in its preferences.
 
 ## Getting a WAD
 
@@ -171,7 +189,8 @@ rather than two views of one. Different WADs, different levels, different player
 
 Every interesting failure here looks the same from outside, so there is a log:
 
-    ~/Library/Logs/Resodoom/resodoom.YYYY-MM-DD.log
+    macOS    ~/Library/Logs/Resodoom/resodoom.YYYY-MM-DD.log
+    Windows  %LOCALAPPDATA%\Resodoom\Logs\resodoom.YYYY-MM-DD.log
 
 It carries the plugin's own account **and the engine's**, which is usually the one that names the
 real problem — a line like `IWAD file '...' not found!` comes straight from Doom.

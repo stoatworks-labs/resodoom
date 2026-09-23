@@ -7,9 +7,11 @@
 > headless GL context, at two aspect ratios — and it has been **run in
 > Resolume Arena 7.27.1 on macOS**, where the inspector, the controls and
 > Aspect behave as documented. A hardware controller mapped onto the controls
-> is still untried. The Windows build passes the same checks and runs in
-> Arena on Windows too, but has no download yet, and the Linux branch has never
-> been built.
+> is still untried. **Windows builds ship from v0.2.2.** The Windows build
+> passes the same headless checks and the fleet's Arena check, but only in a
+> Windows VM with software OpenGL (Mesa llvmpipe) and no GPU; nobody has run it
+> on a Windows PC with a real graphics card yet. The Linux branch has never been
+> built.
 
 **Doom as a live Resolume source.**
 
@@ -49,6 +51,25 @@ macOS builds are signed and notarised by Apple, so they open normally — no Gat
 
 <!-- downloads:end -->
 
+## Installing
+
+```
+macOS    ~/Documents/Resolume Arena/Extra Effects/Resodoom.bundle
+Windows  %USERPROFILE%\Documents\Resolume Arena\Extra Effects\
+```
+
+Avenue uses the same layout under its own folder name. Restart Resolume
+afterwards.
+
+**On Windows, keep the five DLLs together.** `Resodoom.dll` is the plugin; the
+four `resodoom_engine*.dll` files beside it are the engines, one per aspect,
+and it loads them from its own folder. Resolume's scan skips them without
+complaint. From the zip, copy all five. The installer puts them in
+`C:\Program Files\Resodoom` unless you pick Resolume's Extra Effects folder on
+its folder page, which is the easier route; if you keep the default, add that
+folder to Resolume's plugin folders in its preferences. The Windows downloads
+are unsigned, so SmartScreen warns once.
+
 ## Building
 
 ```bash
@@ -61,6 +82,16 @@ cmake --install build      # drops the bundle into Resolume's plugin folder
 
 `--recursive` matters: the FFGL SDK, doomgeneric and stagehand are all
 submodules, and the build stops with instructions if any is missing.
+
+On Windows it builds with MSVC and takes GLEW from vcpkg (`vcpkg.json`):
+
+```
+cmake -B build -A x64 -DVCPKG_TARGET_TRIPLET=x64-windows-static-md ^
+      -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
+```
+
+`build\Release` then holds `Resodoom.dll` with its four engines beside it.
 
 ## Using it
 

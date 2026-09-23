@@ -4,7 +4,8 @@
 FFGL layer: composite it, key it, run it through other effects, MIDI-map the
 controls. With nothing mapped it plays Doom's attract demos forever.
 
-C++17 + C11, CMake → universal `.bundle` (macOS). **GPL-2.0 — NOT the fleet's
+C++17 + C11, CMake → universal `.bundle` (macOS), or `Resodoom.dll` with its
+four engine DLLs beside it (Windows, MSVC + GLEW from vcpkg). **GPL-2.0 — NOT the fleet's
 usual MIT**, because doomgeneric descends from id's Doom source and anything
 linked into this binary inherits it. Public.
 

@@ -438,7 +438,11 @@ each as an FFGL and a VST plugin at its scan, finds neither, and says nothing
 ("loaded 1 plugin(s)" and not one error line), so the layout the plugin looks
 for needs no change for a Windows release. The skip is the controls pass: the
 probe refuses to measure while any file control is empty, and Mod WAD is
-optional. The twelve controls are marked inert in the expectation anyway —
+optional. **The release's own CI-built zip passed the same gate on 2026-09-23**
+(release.yml's first Windows job, a `workflow_dispatch` run before v0.2.2):
+9/0/1 again, the five DLLs deployed flat. Windows releases ship from v0.2.2.
+Still unverified on Windows: a real GPU, Avenue, the installer on a real
+machine, MIDI/keyboard mapping. The twelve controls are marked inert in the expectation anyway —
 during the attract demos any key opens Doom's menu, so a frame comparison would
 pass all twelve for that one reason. The expectation stays out of
 plugin-bench: its WAD fixture is a local path, and no WAD goes in a repo.
