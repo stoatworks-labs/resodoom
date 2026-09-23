@@ -1,0 +1,10 @@
+{
+  "name": "resodoom",
+  "description": "Dependencies for building the resodoom FFGL plugin. GLEW is only needed on Windows; macOS uses the system OpenGL framework. No version field on purpose: the version lives in CMakeLists.txt and StoatworksAbout.h, and a third copy would drift.",
+  "dependencies": [
+    {
+      "name": "glew",
+      "platform": "!osx"
+    }
+  ]
+}

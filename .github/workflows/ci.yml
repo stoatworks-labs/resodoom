@@ -49,3 +49,47 @@ jobs:
             echo "resotest died on a signal ($rc) instead of refusing the WAD"
             exit 1
           fi
+
+  # The Windows build the release ships: MSVC, GLEW static from vcpkg. It has
+  # no GL here (a runner has no GPU and no llvmpipe), so what it proves is the
+  # compile, the four engines landing beside Resodoom.dll, and the no-WAD
+  # refusal. The GL suite and the Arena gate run on winlab.
+  windows:
+    runs-on: windows-latest
+    steps:
+      # Keep patches/*.patch and the sources byte-identical to what is
+      # committed; the runner's git would otherwise check them out as CRLF.
+      - name: Keep line endings as committed
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: >
+          cmake -B build -A x64
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: The engines sit beside the plugin
+        shell: bash
+        run: |
+          for n in Resodoom.dll resodoom_engine.dll resodoom_engine_384.dll \
+                   resodoom_engine_426.dll resodoom_engine_568.dll; do
+            test -f "build/Release/$n" || { echo "missing build/Release/$n"; exit 1; }
+          done
+
+      - name: The no-WAD failure path
+        shell: pwsh
+        run: |
+          & .\build\Release\resotest.exe --iwad C:\nonexistent\none.wad 2>&1 | Select-Object -Last 5
+          $rc = $LASTEXITCODE
+          if ($rc -lt 0 -or $rc -gt 255) {
+            Write-Error ("resotest crashed (0x{0:X8}) instead of refusing the WAD" -f $rc)
+            exit 1
+          }
+          exit 0
