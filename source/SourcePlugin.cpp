@@ -20,7 +20,7 @@ static CFFGLPluginInfo PluginInfo(
 	2,                                               // API major version
 	1,                                               // API minor version
 	0,                                               // Plugin major version
-	1,                                               // Plugin minor version
+	2,                                               // Plugin minor version
 	FF_SOURCE,                                       // Plugin type
 	"Doom as a live Resolume source.\n\nPoint it at a WAD and the game becomes a layer: composite it, key it, run it through other effects, and MIDI-map the controls onto whatever is already on the desk.\n\nWith nothing mapped it plays Doom's own attract demos forever, which is usually what you want from a layer nobody is holding a controller for.\n\nNo game data is shipped with this plugin and none ever will be. You supply your own WAD, exactly as you would with any other source port. Freedoom is free, complete and a good place to start.",
 	"Resodoom FFGL source"                           // About
