@@ -2,12 +2,12 @@ name: release
 
 # Builds the macOS universal Resodoom.bundle and publishes it.
 #
-# **macOS only, on purpose.** The Windows and Linux branches compile in
-# principle and have never been built or run, and an untested binary of a thing
-# that hosts a game engine is worse than no binary: it would be downloaded, it
-# would fail in some way nobody here can reproduce, and the bug report would
-# arrive against a platform with no test rig behind it. When somebody can
-# actually run one, this gets a matrix.
+# **macOS only, for now.** The Windows build compiles under MSVC and passes the
+# same headless suites on winlab (see AGENTS.md), but it has no job here yet: it
+# needs GLEW from vcpkg, the fleet's Windows packaging, and a run through Arena
+# on winlab before anyone downloads it. The Linux branch has never been built
+# or run, and an untested binary of a thing that hosts a game engine is worse
+# than no binary, so it stays source-only until somebody can actually run one.
 #
 # Trigger manually (Actions > release > Run workflow) or by pushing a v* tag.
 on:

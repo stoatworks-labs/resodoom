@@ -7,7 +7,8 @@
 > headless GL context, at two aspect ratios. **It has not been loaded into
 > Resolume yet**, so how the parameter groups land in the inspector and whether
 > a controller MIDI-maps onto the controls usefully are both unconfirmed. The
-> Windows and Linux branches have never been built.
+> Windows build passes the same headless checks but has no download yet, and
+> the Linux branch has never been built.
 
 **Doom as a live Resolume source.**
 

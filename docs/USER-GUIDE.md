@@ -21,8 +21,8 @@ from a layer nobody is holding a controller for.
 > against a real WAD with no graphics API, and the real plugin through the real FFGL sequence in a
 > headless GL context, at two aspect ratios. **It has not been driven inside Resolume yet**, so how
 > the parameter groups land in the inspector and whether a controller MIDI-maps onto the controls
-> usefully are both unconfirmed. The **Windows and Linux branches have never been built**, and no
-> binary is published for either.
+> usefully are both unconfirmed. The **Windows build passes the same headless checks**, but no
+> Windows binary is published yet, and the **Linux branch has never been built**.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
 
