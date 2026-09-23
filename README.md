@@ -7,8 +7,9 @@
 > headless GL context, at two aspect ratios — and it has been **run in
 > Resolume Arena 7.27.1 on macOS**, where the inspector, the controls and
 > Aspect behave as documented. A hardware controller mapped onto the controls
-> is still untried. The Windows build passes the same headless checks but has
-> no download yet, and the Linux branch has never been built.
+> is still untried. The Windows build passes the same checks and runs in
+> Arena on Windows too, but has no download yet, and the Linux branch has never
+> been built.
 
 **Doom as a live Resolume source.**
 
