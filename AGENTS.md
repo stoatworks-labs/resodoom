@@ -428,6 +428,21 @@ plugin (buttons and checkboxes do work), so a test of Aspect needs a real
 click. And a real click on a stuck event button only releases it — the plugin
 acts on the rising edge, so press twice.
 
+**In Arena on Windows (7.27.1 on winlab, Mesa llvmpipe, 2026-09-23)** — this
+branch's MSVC build through the fleet's Arena gate (`plugin-bench/arena`):
+**9 passed, 0 failed, 1 skipped**. It loads and registers, all 29 parameters
+match name, order, type, range and default (Sprint and Run apart), the WAD
+fixture loads, Doom renders, Arena's log is clean and Arena survives. **The
+four engine DLLs can sit beside `Resodoom.dll` in Extra Effects**: Arena tries
+each as an FFGL and a VST plugin at its scan, finds neither, and says nothing
+("loaded 1 plugin(s)" and not one error line), so the layout the plugin looks
+for needs no change for a Windows release. The skip is the controls pass: the
+probe refuses to measure while any file control is empty, and Mod WAD is
+optional. The twelve controls are marked inert in the expectation anyway —
+during the attract demos any key opens Doom's menu, so a frame comparison would
+pass all twelve for that one reason. The expectation stays out of
+plugin-bench: its WAD fixture is a local path, and no WAD goes in a repo.
+
 Still unconfirmed: whether a hardware controller MIDI-maps onto the twelve
 controls usefully, and whether a real commercial IWAD behaves like Freedoom
 and the shareware `doom1.wad` do.

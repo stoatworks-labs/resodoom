@@ -2,10 +2,10 @@ name: release
 
 # Builds the macOS universal Resodoom.bundle and publishes it.
 #
-# **macOS only, for now.** The Windows build compiles under MSVC and passes the
-# same headless suites on winlab (see AGENTS.md), but it has no job here yet: it
-# needs GLEW from vcpkg, the fleet's Windows packaging, and a run through Arena
-# on winlab before anyone downloads it. The Linux branch has never been built
+# **macOS only, for now.** The Windows build compiles under MSVC, passes the
+# same headless suites on winlab, and has passed the Arena gate there (see
+# AGENTS.md), but it has no job here yet: it needs GLEW from vcpkg and the
+# fleet's Windows packaging. The Linux branch has never been built
 # or run, and an untested binary of a thing that hosts a game engine is worse
 # than no binary, so it stays source-only until somebody can actually run one.
 #

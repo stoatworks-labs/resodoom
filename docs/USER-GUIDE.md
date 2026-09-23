@@ -22,8 +22,8 @@ from a layer nobody is holding a controller for.
 > headless GL context, at two aspect ratios — and it has been **run in Resolume Arena 7.27.1 on
 > macOS**: the inspector, the controls, Aspect and Auto all behave as this guide describes. What
 > nobody has tried yet is a hardware controller mapped onto the controls. The **Windows build
-> passes the same headless checks**, but no Windows binary is published yet, and the **Linux
-> branch has never been built**.
+> passes the same checks, and runs in Arena on Windows too**, but no Windows binary is
+> published yet, and the **Linux branch has never been built**.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
 
