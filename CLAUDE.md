@@ -57,10 +57,12 @@ twelve controls in a **Controls** group — plain booleans, so Resolume
 MIDI-maps, keyboard-maps and automates them like anything else — then
 `Aspect` (Auto / 4:3 / 16:10 / 16:9 / 21:9), which picks the engine.
 
-**Parameters are addressed by index in saved compositions, so a new one goes
-at the end** (before the About block, which holds no state). That is why
-Aspect sits after the controls rather than beside Scaling: inserting it there
-would shift all twelve and misroute every saved MIDI mapping.
+**Resolume addresses parameters by NAME** — in saved compositions and in MIDI,
+keyboard and OSC mappings (`…/video/source/swresodoom/<name>`, lower case, no
+spaces). So **every name must be unique and must never change**: 0.2.0 called
+the Sprint control "Run", like the pause switch, and Arena merged the two.
+`resogl` checks the names. A new parameter still goes at the end (before the
+About block), because FFGL's ABI is by index and not every host is Resolume.
 
 ## Notes
 - **`doomgeneric_Create` does not loop.** It runs D_DoomMain plus one tick and
@@ -93,9 +95,11 @@ would shift all twelve and misroute every saved MIDI mapping.
 `source/Diag.{h,cpp}` — log file only, no crash handler (this runs inside
 Resolume). It also **redirects the process's stderr into the log**, because
 Doom writes its failures there and then exits, and inside Resolume that output
-otherwise goes nowhere. It covers the failures that all look identical from
-outside ("the layer is black"): a WAD that could not be found, a WAD Doom
-rejected, a missing engine library, an ABI mismatch, a shader that would not
-compile.
+otherwise goes nowhere — but only once an engine opens, never in the
+constructor: Arena constructs every plugin at its startup scan, and taking
+stderr there took the whole application's. It covers the failures that all
+look identical from outside ("the layer is black"): a WAD that could not be
+found, a WAD Doom rejected, a missing engine library, an ABI mismatch, a shader
+that would not compile.
 
     ~/Library/Logs/Resodoom/resodoom.YYYY-MM-DD.log

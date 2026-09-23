@@ -63,11 +63,11 @@ enum ParamId : unsigned
 		Which engine to load, by aspect: Auto, or one of kEngineAspects.
 
 		**Here, after the controls, and not beside Scaling where it belongs by
-		meaning.** Saved compositions refer to parameters by index, and
-		inserting it among the display settings would shift all twelve
-		controls -- a MIDI mapping saved against an older version would then
-		drive the wrong buttons. Only the About block moves, and it holds no
-		state a composition needs back.
+		meaning.** Resolume itself would not mind either way: it addresses
+		parameters by name, in saved compositions and in MIDI, keyboard and OSC
+		mappings alike (checked in Arena 7.27.1). But FFGL's own ABI is by
+		index, and not every host is Resolume, so a new parameter still goes at
+		the end, where it shifts nothing any host could have saved.
 	*/
 	PT_ASPECT,       ///< FF_TYPE_OPTION -- 0 is Auto
 
@@ -115,6 +115,19 @@ inline int ButtonKey( unsigned param )
 	}
 }
 
+/*
+	**Every parameter name must be unique, and must never change.** Resolume
+	stores and maps parameters by NAME: a saved composition writes
+	<Param name="..."> and a MIDI, keyboard or OSC mapping targets
+	.../video/source/swresodoom/<name, lower case, no spaces>. In 0.2.0 Sprint
+	was called "Run", like the pause switch, and Arena gave the two one address:
+	it restored both saved values onto the pause switch, and the control could
+	not be mapped on its own. resogl checks every name for this.
+
+	A rename is not free either -- the old name stops matching what compositions
+	and mappings already hold -- so this one moved the control rather than the
+	pause switch: whatever a 0.2.0 composition saved as "Run" still lands on Run.
+*/
 inline const char* ButtonName( unsigned param )
 {
 	switch( param )
@@ -127,7 +140,7 @@ inline const char* ButtonName( unsigned param )
 		case PT_STRAFE_RIGHT: return "Strafe Right";
 		case PT_FIRE:         return "Fire";
 		case PT_USE:          return "Use";
-		case PT_SPRINT:       return "Run";
+		case PT_SPRINT:       return "Sprint";
 		case PT_MENU:         return "Menu";
 		case PT_CONFIRM:      return "Confirm";
 		case PT_AUTOMAP:      return "Automap";

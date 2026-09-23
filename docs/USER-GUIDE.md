@@ -19,10 +19,11 @@ from a layer nobody is holding a controller for.
 
 > **Before you rely on this:** the macOS build is verified end to end **headlessly** — the engine
 > against a real WAD with no graphics API, and the real plugin through the real FFGL sequence in a
-> headless GL context, at two aspect ratios. **It has not been driven inside Resolume yet**, so how
-> the parameter groups land in the inspector and whether a controller MIDI-maps onto the controls
-> usefully are both unconfirmed. The **Windows build passes the same headless checks**, but no
-> Windows binary is published yet, and the **Linux branch has never been built**.
+> headless GL context, at two aspect ratios — and it has been **run in Resolume Arena 7.27.1 on
+> macOS**: the inspector, the controls, Aspect and Auto all behave as this guide describes. What
+> nobody has tried yet is a hardware controller mapped onto the controls. The **Windows build
+> passes the same headless checks**, but no Windows binary is published yet, and the **Linux
+> branch has never been built**.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
 
@@ -86,8 +87,12 @@ intermissions are the original artwork, centred with black either side.
 Doom's picture width is fixed when the engine is built, so the plugin carries one engine per aspect,
 and **changing Aspect restarts the game** — but only when it needs a different engine. Choosing
 the one already running does nothing, and nor does Resolume re-sending the value when a
-composition loads. Auto follows the composition's resolution; changing that restarts the game too
-if the new shape wants a different engine.
+composition loads.
+
+**Auto matches the composition as it was when you added the clip.** Resolume keeps every clip at
+the size it was made at, so changing the composition's size later does not reach a clip that is
+already there: Resolume fits the old picture into the new frame itself, cropping it by default.
+To have Auto choose again, add the clip afresh. A copy of the old one keeps the old size.
 
 **Scaling** decides how the picture then meets your composition.
 
@@ -136,10 +141,15 @@ a visual.
 | **Strafe Left**, **Strafe Right** | Sidestep |
 | **Fire** | Fire |
 | **Use** | Open doors, press switches |
-| **Run** | Hold to move faster |
+| **Sprint** | Hold to move faster |
 | **Menu** | Escape — opens Doom's own menu |
 | **Confirm** | Enter — chooses in that menu |
 | **Automap** | Tab |
+
+**Sprint** was called **Run** in 0.2.0, the same as the switch at the top that pauses the game.
+Resolume tells parameters apart by name, so the two were one to it: a mapping could not reach
+Sprint on its own, and a reopened composition put both saved values on the pause switch. A 0.2.0
+mapping or composition that meant Sprint needs setting again.
 
 **Menu** and **Confirm** are how you reach everything this plugin does not expose: saving,
 loading, changing a weapon binding, and so on. Doom's own menus are still in there.

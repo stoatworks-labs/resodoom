@@ -4,11 +4,11 @@
 > (Anthropic), directed and reviewed by a human author. The macOS build is
 > verified end to end **headlessly**: the engine against a real WAD with no
 > graphics API, and the real plugin class through the real FFGL sequence in a
-> headless GL context, at two aspect ratios. **It has not been loaded into
-> Resolume yet**, so how the parameter groups land in the inspector and whether
-> a controller MIDI-maps onto the controls usefully are both unconfirmed. The
-> Windows build passes the same headless checks but has no download yet, and
-> the Linux branch has never been built.
+> headless GL context, at two aspect ratios — and it has been **run in
+> Resolume Arena 7.27.1 on macOS**, where the inspector, the controls and
+> Aspect behave as documented. A hardware controller mapped onto the controls
+> is still untried. The Windows build passes the same headless checks but has
+> no download yet, and the Linux branch has never been built.
 
 **Doom as a live Resolume source.**
 
