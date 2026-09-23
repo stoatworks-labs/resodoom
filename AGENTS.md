@@ -178,20 +178,40 @@ arbitrary and are not:
   for a choice that ended where it began. CodeRabbit caught it on #3; the
   check for it failed first, then passed with the fix.
 
-**Parameters are addressed by index in saved compositions, so new ones go at
-the end.** Aspect belongs beside Scaling by meaning and sits after the twelve
-controls instead: inserting it among the display settings would shift every
-control by one, and a controller mapped in an older composition would then
-drive the wrong buttons. Only the About block moved, and it holds no state a
-composition needs back.
+**Resolume addresses parameters by NAME, so every name must be unique and
+must never change.** A saved composition stores `<Param name="Scaling" …>`,
+and a MIDI, keyboard or OSC mapping targets
+`…/video/source/swresodoom/scaling` — lower case, spaces removed, from the 16
+characters FFGL hands the host (seen in Arena 7.27.1, 2026-09-23). 0.2.0
+shipped the Sprint control named **"Run"**, like the pause switch, and Arena
+treated the two as one: one OSC address, selecting either selected both, and
+on reopening a composition both saved values landed on the pause switch — a
+paused layer came back running. `resogl` now reduces every name to its address
+and fails on a clash; it failed on 0.2.0. A rename is not free either, since
+compositions and mappings hold the old name, which is why Sprint moved and not
+the pause switch: whatever 0.2.0 saved as "Run" still lands on Run.
+
+New parameters still go at the end — Aspect sits after the twelve controls, not
+beside Scaling — because FFGL's own ABI is by index and not every host is
+Resolume. For Resolume alone the position would not matter.
 
 **A GL re-initialisation used to leave the layer black.** `DeInitGL` closes the
 engine, and nothing reopened it: the host re-sends the same WAD path, so
 `SetTextParameter` saw no change. `InitGL` now requests a load whenever a WAD
-is already chosen — which is also how Auto follows a change of canvas. That
-viewport is the ONLY size the plugin reads, deliberately: a host renders the
-same instance at other sizes for previews and thumbnails, and following the
-size bound at draw time would swap engines and restart the game mid-show.
+is already chosen. That viewport is the ONLY size the plugin reads,
+deliberately: a host renders the same instance at other sizes for previews and
+thumbnails, and following the size bound at draw time would swap engines and
+restart the game mid-show.
+
+**It is the size of the clip, not of the composition.** Arena gives each clip
+a Width and Height when it is created — saved with the clip — and resizing the
+composition changes neither: it re-initialises nothing and fits the old size
+into the new frame with the clip's Resize mode (Fill by default, so a 16:9
+clip in a square composition is centre-cropped). Auto therefore matches the
+composition a clip was added to. A copy keeps its original's size; only a clip
+added after the resize picks again. Checked by resizing 1920×1080 to
+1080×1080: the running layer and a pasted copy stayed on the 16:9 engine, a
+fresh clip chose 4:3.
 
 **`-include` is processed before the file's first line.** The hook header is
 force-included into every translation unit including the one that *implements*
@@ -357,7 +377,11 @@ and **skips loudly** rather than quietly passing without one.
   widescreen title page the art ends three-quarters of the way across and the
   rest is that near-black, which is why ink reads 0.998 there — the buffer is
   edge to edge, even though the picture in it is not. `--check --out F.ppm`
-  writes the exact frame the Fit checks measured.
+  writes the exact frame the Fit checks measured. Two more things only a host
+  would otherwise show: **every parameter name reduces to its own address**
+  (lower case, no spaces, first 16 characters — how Resolume maps them), and
+  **constructing the plugin leaves stderr alone** while opening an engine
+  takes it. Both failed against 0.2.0 before they passed.
 - **The symbol checks** — that each engine exports exactly one entry point and
   none of doomgeneric's internals, that the bundle exports `plugMain`, and that
   every engine was actually staged inside the bundle. A bundle missing the 320
@@ -385,11 +409,28 @@ way are commented where they live: FFGL.h defines `NOUSER` before including
 *first*), the SDK's `boolean` collides with Doom's unless `WIN32_LEAN_AND_MEAN`,
 and `<stdatomic.h>` needs `/experimental:c11atomics`.
 
-**Host verification is Allan's, not an agent's.** Driving the Resolume GUI from
-a session is unreliable. **Nothing here has been loaded into Resolume.** The
-three things most worth checking first: how the parameter groups land in the
-inspector, whether a controller MIDI-maps onto the twelve controls usefully,
-and whether a real commercial IWAD behaves like Freedoom does.
+**In Resolume Arena (7.27.1, macOS, Apple Silicon, 2026-09-23)** — the shipped
+0.2.0 bundle, driven from a session through the GUI. Confirmed: it registers
+as `SW Resodoom`, `RD01`, a source; the inspector shows the settings, a
+collapsible **Controls** group, **Aspect** as one row of five buttons, then
+**About** with the right version; Auto on 1920×1080 runs the 16:9 engine edge
+to edge; 21:9 and back swap engines; **choosing 16:9 while Auto already runs
+the 16:9 engine does not restart the game**, and a Restart afterwards logs
+`Aspect fixed`, which proves the value really arrived; a fresh clip on a
+1080×1080 composition runs 4:3, letterboxed; three layers are three games;
+Menu opens Doom's menu and Run off parks the game. Found: the duplicate
+"Run" name, stderr taken at the startup scan, and the clip-size behaviour —
+all above, and all fixed or documented.
+
+Two things about driving Arena from a session. **Its option rows ignore an
+accessibility press**: the button lights up and the value never reaches the
+plugin (buttons and checkboxes do work), so a test of Aspect needs a real
+click. And a real click on a stuck event button only releases it — the plugin
+acts on the rising edge, so press twice.
+
+Still unconfirmed: whether a hardware controller MIDI-maps onto the twelve
+controls usefully, and whether a real commercial IWAD behaves like Freedoom
+and the shareware `doom1.wad` do.
 
 ---
 

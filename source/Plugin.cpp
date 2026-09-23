@@ -83,13 +83,6 @@ std::string ResodoomPlugin::EngineLibraryPath( uint32_t width )
 ResodoomPlugin::ResodoomPlugin()
 {
 	stagehand::diag::Init( "Resodoom" );
-
-	/*
-		Doom writes its failures to stderr and then exits, from deep inside C
-		this plugin does not control. Inside Resolume that output goes nowhere,
-		and it is usually the only thing that names a bad WAD.
-	*/
-	stagehand::diag::CaptureStderr();
 	stagehand::diag::info( "plugin instantiated" );
 
 	SetMinInputs( 0 );
@@ -245,10 +238,14 @@ FFResult ResodoomPlugin::InitGL( const FFGLViewportStruct* vp )
 		the host re-sends the same paths, so SetTextParameter sees no change.
 		Before this the layer simply stayed black.
 
-		It is also how Auto follows the canvas. This viewport is the only size
-		the plugin reads, deliberately -- not the one bound at draw time, which
-		a host changes for previews and thumbnails, and following those would
-		swap engines and restart the game mid-show.
+		This viewport is the only size the plugin reads, deliberately -- not
+		the one bound at draw time, which a host changes for previews and
+		thumbnails, and following those would swap engines and restart the game
+		mid-show. It is the size of the CLIP, which is not always the
+		composition's: Arena keeps each clip at the size it was created at (a
+		Width and Height saved with the clip) and fits that into a resized
+		composition itself, re-initialising nothing. So Auto matches the
+		composition a clip was added to, and a clip added after a resize.
 	*/
 	if( !mIwad.empty() )
 	{
@@ -386,6 +383,21 @@ void ResodoomPlugin::ApplyPendingLoad()
 	};
 	if( !mPwad.empty() )
 		options.push_back( { "pwad", mPwad.c_str() } );
+
+	/*
+		Doom writes its failures to stderr and then exits, from deep inside C
+		this plugin does not control. Inside Resolume that output goes nowhere,
+		and it is usually the only thing that names a bad WAD.
+
+		Taken here, as an engine opens, and not when the plugin is constructed:
+		Arena constructs every plugin it finds while scanning at startup, so in
+		the constructor this took the whole application's stderr -- Arena's own
+		and every other plugin's -- for anyone who merely had resodoom
+		installed. Seen in Arena 7.27.1: its NSLog lines and another plugin's
+		loader chatter, all in resodoom's log. Once per process; stagehand
+		ignores the second call.
+	*/
+	stagehand::diag::CaptureStderr();
 
 	if( !mEngine.Open( engine, options ) )
 	{

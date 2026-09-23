@@ -49,15 +49,20 @@
 
 #include "Plugin.h"
 
+#include <stagehand/Diag.h>
+
 #if defined( __APPLE__ )
 	#include <OpenGL/CGLCurrent.h>
 	#include <OpenGL/CGLTypes.h>
 	#include <OpenGL/OpenGL.h>
 #endif
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -98,6 +103,24 @@ void ok( bool condition, const char* what )
 	std::printf( condition ? "  ok    %s\n" : "  FAIL  %s\n", what );
 	if( !condition )
 		g_failures += 1;
+}
+
+/// Write a line nobody else could have written to stderr, and say whether it
+/// ended up in the diagnostics log -- which is where stderr goes once it has
+/// been taken, and nowhere near it before.
+bool StderrReachesLog( const char* when )
+{
+	const std::string marker = std::string( "resogl stderr probe, " ) + when + ", "
+		+ std::to_string( std::chrono::system_clock::now().time_since_epoch().count() );
+	std::fprintf( stderr, "%s\n", marker.c_str() );
+	std::fflush( stderr );
+
+	std::ifstream log( stagehand::diag::LogPath() );
+	std::string   line;
+	while( std::getline( log, line ) )
+		if( line.find( marker ) != std::string::npos )
+			return true;
+	return false;
 }
 
 /*
@@ -470,6 +493,58 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 	Target target = MakeTarget( width, height );
 	FFGLViewportStruct vp { 0, 0, width, height };
 
+	/*
+		--- every parameter has its own address in the host -----------
+
+		Resolume stores and maps parameters by NAME, not by index: a saved
+		composition writes <Param name="Scaling" ...>, and a MIDI, keyboard or
+		OSC mapping targets .../video/source/swresodoom/scaling -- lower case,
+		spaces gone, from the 16 characters FFGL hands the host. Two names that
+		reduce to one address are one parameter as far as the host can tell.
+		0.2.0 shipped the Sprint control named "Run", beside the pause switch
+		"Run": Arena gave both one address, restored both saved values onto the
+		first, and could not map the control on its own.
+	*/
+	{
+		ResodoomPlugin           plugin;
+		std::vector< std::string > addresses;
+		std::string              clashes;
+		for( unsigned i = 0; i < plugin.GetNumParams(); ++i )
+		{
+			const char* name = plugin.GetParamName( i );
+			std::string address;
+			for( size_t c = 0; name && name[ c ] && c < 16; ++c )
+				if( name[ c ] != ' ' )
+					address += char( std::tolower( static_cast< unsigned char >( name[ c ] ) ) );
+
+			if( std::find( addresses.begin(), addresses.end(), address ) != addresses.end() )
+				clashes += ( clashes.empty() ? "" : ", " ) + address;
+			addresses.push_back( address );
+		}
+		if( !clashes.empty() )
+			std::printf( "        shared by more than one parameter: %s\n", clashes.c_str() );
+		ok( clashes.empty() && !addresses.empty(),
+			"every parameter has its own address in the host (Resolume maps by name)" );
+	}
+
+	/*
+		--- constructing the plugin leaves the host's stderr alone -----
+
+		Arena constructs every plugin it finds while it scans at startup. 0.2.0
+		took the process's stderr in the constructor, so anyone who merely had
+		resodoom installed got Arena's own stderr, and every other plugin's,
+		written into resodoom's log. Nothing before this point in the process
+		has opened an engine, which is the only thing allowed to take it.
+	*/
+	{
+		ResodoomPlugin plugin;
+		plugin.InitGL( &vp );
+		DrawOnce( plugin, target );
+		ok( !StderrReachesLog( "before any engine" ),
+			"constructing the plugin leaves the host's stderr alone" );
+		plugin.DeInitGL();
+	}
+
 	/* --- the shader compiles at all -------------------------------- */
 	{
 		ResodoomPlugin plugin;
@@ -500,6 +575,16 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 			"a WAD that cannot be loaded leaves the layer alone too" );
 		plugin.DeInitGL();
 	}
+
+#if !defined( _WIN32 )
+	/*
+		That did open an engine, even though Doom then refused the path -- and
+		a refusal like that is exactly what taking stderr is for. (stagehand
+		cannot redirect it on Windows, so there is nothing to check there.)
+	*/
+	ok( StderrReachesLog( "after an engine opened" ),
+		"once an engine has opened, stderr goes to the log, where Doom's errors land" );
+#endif
 
 	/* --- the real thing -------------------------------------------- */
 	std::vector< uint8_t > fitted;
