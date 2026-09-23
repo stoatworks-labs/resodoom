@@ -30,15 +30,15 @@ what you want from a layer nobody is holding a controller for.
 
 ## Download
 
-**[v0.1.0](https://github.com/stoatworks-labs/resodoom/releases/tag/v0.1.0)** — prebuilt for macOS. Pick your platform:
+**[v0.2.0](https://github.com/stoatworks-labs/resodoom/releases/tag/v0.2.0)** — prebuilt for macOS. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image | [`resodoom-0.1.0-macos-universal.dmg`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.1.0/resodoom-0.1.0-macos-universal.dmg) | 751 KB |
-| Universal (Apple Silicon + Intel) · .zip archive | [`resodoom-macos-universal.zip`](https://github.com/stoatworks-labs/resodoom/releases/latest/download/resodoom-macos-universal.zip) | 693 KB |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`resodoom-0.2.0-macos-universal.dmg`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.2.0/resodoom-0.2.0-macos-universal.dmg) | 2.4 MB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`resodoom-macos-universal.zip`](https://github.com/stoatworks-labs/resodoom/releases/latest/download/resodoom-macos-universal.zip) | 2.2 MB |
 
 </details>
 
