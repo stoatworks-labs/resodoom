@@ -84,7 +84,7 @@ either side, rather than stretching the 4:3 picture or cropping it. Menus, the t
 intermissions are the original artwork, centred with black either side.
 
 Doom's picture width is fixed when the engine is built, so the plugin carries one engine per aspect,
-and **changing Aspect restarts the game** -- but only when it needs a different engine. Choosing
+and **changing Aspect restarts the game** — but only when it needs a different engine. Choosing
 the one already running does nothing, and nor does Resolume re-sending the value when a
 composition loads. Auto follows the composition's resolution; changing that restarts the game too
 if the new shape wants a different engine.
