@@ -11,6 +11,14 @@
 	  resogl --iwad W.wad --check --size 720x720
 	  resogl --iwad W.wad --out /tmp/f.ppm
 	  resogl --iwad W.wad --check --out /tmp/fitted.ppm    the frame Fit is measured on
+	  resogl --iwad W.wad --pipe --size 1920x1080 --fps 30 --frames 900 \
+	         --script cues.txt | ffmpeg -f rawvideo -pix_fmt rgba -s 1920x1080 -r 30 -i - out.mp4
+
+	--pipe is the fleet's filming mode (copperlist's cptest, teletext's txtest):
+	raw RGBA frames, top-down, on stdout, driven by a cue sheet of parameter
+	moves by NAME. See RunPipe for the contract, and the one way it differs
+	from a shader plugin's: the game runs on the wall clock, so the frames are
+	paced in real time.
 
 	Everything here is portable except getting a context, which nothing has
 	ever made portable: CGL on macOS, WGL behind a hidden window on Windows.
@@ -60,12 +68,24 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
+
+#if defined( _WIN32 )
+	#include <fcntl.h>
+	#include <io.h>
+#else
+	#include <unistd.h>
+#endif
 
 using resodoom::ResodoomPlugin;
 
@@ -873,6 +893,303 @@ int SelfTest( const std::string& iwad, unsigned width, unsigned height,
 	return g_failures == 0 ? 0 : 1;
 }
 
+
+/*
+	--pipe: raw RGBA frames out, a cue sheet in.
+
+	The fleet's filming format, so one render script drives any plugin:
+	`frame  Parameter Name  value` per line (or `frame  Name=value`), `#` a
+	comment, a track held before its first key and after its last and linear
+	between. Parameters are addressed by the NAME the inspector shows, which is
+	how Resolume addresses them too. Booleans, options and the Restart event
+	interpolate like everything else, so a cue sheet steps them with two keys a
+	frame apart. A value is only sent to the plugin when it CHANGES: Episode,
+	Map and Skill reload the game on every set, whatever the value.
+
+	**The frames are paced on the wall clock.** A shader plugin is a function
+	of the host's time, so its harness can hand it frame n at n/fps and render
+	as fast as the encoder takes them. This plugin is not: the game runs on
+	its own thread and ProcessOpenGL releases its clock against elapsed real
+	time, exactly as Resolume drives it. So frame n is drawn at t0 + n/fps of
+	real time, and a 60 s take takes 60 s. A reader slower than the frame rate
+	holds the write, the game's time keeps passing (clamped to a quarter
+	second a frame, as in the host), and the take skips rather than stalls --
+	which is what Resolume would show on an overloaded machine, and the reason
+	to encode the pipe with a fast preset and re-encode afterwards.
+
+	Frames are written top-down (glReadPixels is bottom-up). The reader hanging
+	up before --frames have been written is exit 1; with --frames 0 the take
+	runs until then and that is exit 0. SIGPIPE is ignored so the plugin is
+	shut down either way.
+*/
+using Track = std::vector< std::pair< int, float > >;
+
+std::map< std::string, Track > LoadScript( const std::string& path, std::string& error )
+{
+	std::map< std::string, Track > tracks;
+	std::ifstream                  file( path );
+	if( !file )
+	{
+		error = "cannot open " + path;
+		return tracks;
+	}
+	std::string line;
+	int         lineNumber = 0;
+	while( std::getline( file, line ) )
+	{
+		++lineNumber;
+		const size_t hash = line.find( '#' );
+		if( hash != std::string::npos )
+			line.erase( hash );
+		std::istringstream in( line );
+		int                frame = 0;
+		if( !( in >> frame ) )
+			continue;
+		std::vector< std::string > words;
+		std::string                word;
+		while( in >> word )
+			words.push_back( word );
+		const std::string where =
+			path + ":" + std::to_string( lineNumber ) + ": expected `frame Parameter Name value`";
+		if( words.empty() )
+		{
+			error = where;
+			return {};
+		}
+		std::string  name;
+		float        value  = 0.0f;
+		const size_t equals = words.back().find( '=' );
+		if( words.size() == 1 || equals != std::string::npos )
+		{
+			if( equals == std::string::npos )
+			{
+				error = where;
+				return {};
+			}
+			value = std::strtof( words.back().substr( equals + 1 ).c_str(), nullptr );
+			words.back().erase( equals );
+		}
+		else
+		{
+			value = std::strtof( words.back().c_str(), nullptr );
+			words.pop_back();
+		}
+		for( const std::string& part : words )
+			if( !part.empty() )
+				name += name.empty() ? part : " " + part;
+		if( name.empty() )
+		{
+			error = where;
+			return {};
+		}
+		tracks[ name ].emplace_back( frame, value );
+	}
+	for( auto& entry : tracks )
+		std::sort( entry.second.begin(), entry.second.end() );
+	return tracks;
+}
+
+float ValueAt( const Track& track, int frame )
+{
+	if( track.empty() )
+		return 0.0f;
+	if( frame <= track.front().first )
+		return track.front().second;
+	if( frame >= track.back().first )
+		return track.back().second;
+	for( size_t i = 1; i < track.size(); ++i )
+		if( frame <= track[ i ].first )
+		{
+			const auto& a    = track[ i - 1 ];
+			const auto& b    = track[ i ];
+			const float span = float( b.first - a.first );
+			const float t    = span > 0.0f ? float( frame - a.first ) / span : 1.0f;
+			return a.second + ( b.second - a.second ) * t;
+		}
+	return track.back().second;
+}
+
+struct PipeOptions
+{
+	int         frames = 0; ///< 0: until the reader hangs up
+	double      fps    = 30.0;
+	std::string script;
+	std::vector< std::pair< std::string, std::string > > sets;
+};
+
+/// The whole frame to the frame stream, or false once the reader has gone.
+bool WriteAll( int fd, const uint8_t* data, size_t bytes )
+{
+	size_t written = 0;
+	while( written < bytes )
+	{
+#if defined( _WIN32 )
+		const int put = _write( fd, data + written,
+								unsigned( std::min< size_t >( bytes - written, 1u << 30 ) ) );
+#else
+		const ssize_t put = write( fd, data + written, bytes - written );
+#endif
+		if( put <= 0 )
+			return false;
+		written += size_t( put );
+	}
+	return true;
+}
+
+int RunPipe( const std::string& iwad, unsigned width, unsigned height, const PipeOptions& o )
+{
+#if defined( SIGPIPE )
+	std::signal( SIGPIPE, SIG_IGN );
+#endif
+	if( width == 0 || height == 0 || !( o.fps > 0.0 ) )
+	{
+		std::fprintf( stderr, "resogl: --pipe needs a positive size and --fps\n" );
+		return 1;
+	}
+
+	/*
+		The frames get a private copy of stdout, and fd 1 itself is pointed at
+		stderr. Doom prints its startup banner and its "This appears to be
+		v1.8." with printf, to STDOUT, and the engine is loaded into this
+		process: the first cut of this mode handed ffmpeg 2,049 bytes of banner
+		ahead of the first frame, and every frame after it was skewed by that.
+		Taking a duplicate before the engine opens keeps the stream clean and
+		the banner where the log will pick it up.
+	*/
+#if defined( _WIN32 )
+	const int frameFd = _dup( _fileno( stdout ) );
+	_dup2( _fileno( stderr ), _fileno( stdout ) );
+	_setmode( frameFd, _O_BINARY );
+#else
+	const int frameFd = dup( STDOUT_FILENO );
+	dup2( STDERR_FILENO, STDOUT_FILENO );
+#endif
+	if( frameFd < 0 )
+	{
+		std::fprintf( stderr, "resogl: cannot take stdout for the frames\n" );
+		return 1;
+	}
+
+	ResodoomPlugin plugin;
+
+	// Names to ids: everything between the two file pickers and the About
+	// block. The WAD comes from --iwad; an About button that "moved" would
+	// open a browser.
+	std::map< std::string, unsigned > byName;
+	for( unsigned id = resodoom::PT_RUN; id < resodoom::PT_ABOUT_FIRST; ++id )
+		if( const char* name = plugin.GetParamName( id ) )
+			byName[ name ] = id;
+
+	std::map< unsigned, float > last;
+	for( const auto& kv : o.sets )
+	{
+		const auto found = byName.find( kv.first );
+		if( found == byName.end() )
+		{
+			std::fprintf( stderr, "resogl: no parameter named '%s'\n", kv.first.c_str() );
+			return 1;
+		}
+		const float value = float( std::atof( kv.second.c_str() ) );
+		plugin.SetFloatParameter( found->second, value );
+		last[ found->second ] = value;
+	}
+
+	std::map< unsigned, Track > automation;
+	if( !o.script.empty() )
+	{
+		std::string error;
+		const auto  tracks = LoadScript( o.script, error );
+		if( !error.empty() )
+		{
+			std::fprintf( stderr, "resogl: %s\n", error.c_str() );
+			return 1;
+		}
+		for( const auto& entry : tracks )
+		{
+			const auto found = byName.find( entry.first );
+			if( found == byName.end() )
+			{
+				std::fprintf( stderr,
+							  "resogl: the script names \"%s\", which is not an automatable parameter\n",
+							  entry.first.c_str() );
+				return 1;
+			}
+			automation[ found->second ] = entry.second;
+		}
+	}
+
+	// Only a CHANGE reaches the plugin. Episode, Map and Skill reload the game
+	// on every set, so re-sending a held value every frame would restart it
+	// every frame.
+	auto apply = [ & ]( int frame ) {
+		for( const auto& track : automation )
+		{
+			const float value = ValueAt( track.second, frame );
+			const auto  seen  = last.find( track.first );
+			if( seen != last.end() && seen->second == value )
+				continue;
+			plugin.SetFloatParameter( track.first, value );
+			last[ track.first ] = value;
+		}
+	};
+
+	// Frame 0's values before the first load, so Aspect, Episode and Map
+	// shape the game the take opens on rather than restarting it a frame in.
+	apply( 0 );
+
+	Target             target = MakeTarget( width, height );
+	FFGLViewportStruct vp { 0, 0, width, height };
+	if( !Bring( plugin, vp, iwad ) )
+	{
+		std::fprintf( stderr, "resogl: InitGL failed\n" );
+		DestroyTarget( target );
+		return 1;
+	}
+
+	// The take starts when the game reaches the screen, not while the engine
+	// is still reading the WAD: Resolume would show black there, and nobody
+	// films that.
+	if( IsBlank( DrawUntilPicture( plugin, target ) ) )
+	{
+		std::fprintf( stderr, "resogl: nothing was drawn\n" );
+		plugin.DeInitGL();
+		DestroyTarget( target );
+		return 1;
+	}
+
+	const size_t           rowBytes = size_t( width ) * 4;
+	std::vector< uint8_t > frame( rowBytes * height );
+	int                    status = 0;
+
+	const auto t0 = std::chrono::steady_clock::now();
+	for( int f = 0; o.frames <= 0 || f < o.frames; ++f )
+	{
+		apply( f );
+
+		// Real time, not the frame counter: the game's clock is the wall's.
+		std::this_thread::sleep_until(
+			t0 + std::chrono::duration_cast< std::chrono::steady_clock::duration >(
+					 std::chrono::duration< double >( double( f ) / o.fps ) ) );
+
+		const auto rgba = DrawOnce( plugin, target );
+		for( unsigned y = 0; y < height; ++y )
+			std::memcpy( frame.data() + size_t( y ) * rowBytes,
+						 rgba.data() + size_t( height - 1 - y ) * rowBytes, rowBytes );
+
+		if( !WriteAll( frameFd, frame.data(), frame.size() ) )
+		{
+			// The reader hung up. Short of a requested length that is a
+			// failure the pipeline should see; "until then" is exit 0.
+			status = o.frames > 0 ? 1 : 0;
+			break;
+		}
+	}
+
+	plugin.DeInitGL();
+	DestroyTarget( target );
+	return status;
+}
+
 } // namespace
 
 int main( int argc, char** argv )
@@ -881,21 +1198,44 @@ int main( int argc, char** argv )
 	std::string out;
 	unsigned    width = 1280, height = 720;
 	bool        doCheck = false;
+	bool        doPipe  = false;
+	PipeOptions pipe;
 
 	for( int i = 1; i < argc; ++i )
 	{
 		if( !std::strcmp( argv[ i ], "--check" ) )
 			doCheck = true;
+		else if( !std::strcmp( argv[ i ], "--pipe" ) )
+			doPipe = true;
 		else if( !std::strcmp( argv[ i ], "--iwad" ) && i + 1 < argc )
 			iwad = argv[ ++i ];
 		else if( !std::strcmp( argv[ i ], "--out" ) && i + 1 < argc )
 			out = argv[ ++i ];
 		else if( !std::strcmp( argv[ i ], "--size" ) && i + 1 < argc )
 			std::sscanf( argv[ ++i ], "%ux%u", &width, &height );
+		else if( !std::strcmp( argv[ i ], "--fps" ) && i + 1 < argc )
+			pipe.fps = std::atof( argv[ ++i ] );
+		else if( !std::strcmp( argv[ i ], "--frames" ) && i + 1 < argc )
+			pipe.frames = std::atoi( argv[ ++i ] );
+		else if( !std::strcmp( argv[ i ], "--script" ) && i + 1 < argc )
+			pipe.script = argv[ ++i ];
+		else if( !std::strcmp( argv[ i ], "--set" ) && i + 1 < argc )
+		{
+			const std::string kv     = argv[ ++i ];
+			const size_t      equals = kv.find( '=' );
+			if( equals == std::string::npos )
+			{
+				std::fprintf( stderr, "resogl: --set wants Name=value\n" );
+				return 2;
+			}
+			pipe.sets.emplace_back( kv.substr( 0, equals ), kv.substr( equals + 1 ) );
+		}
 		else
 		{
 			std::fprintf( stderr,
-						  "usage: resogl --iwad PATH [--check] [--size WxH] [--out F.ppm]\n" );
+						  "usage: resogl --iwad PATH [--check] [--size WxH] [--out F.ppm]\n"
+						  "       resogl --iwad PATH --pipe [--size WxH] [--fps N] [--frames N]\n"
+						  "              [--script cues.txt] [--set Name=value ...]   raw RGBA on stdout\n" );
 			return 2;
 		}
 	}
@@ -947,7 +1287,11 @@ int main( int argc, char** argv )
 #endif
 
 	int rc = 0;
-	if( doCheck )
+	if( doPipe )
+	{
+		rc = RunPipe( iwad, width, height, pipe );
+	}
+	else if( doCheck )
 	{
 		rc = SelfTest( iwad, width, height, out );
 	}

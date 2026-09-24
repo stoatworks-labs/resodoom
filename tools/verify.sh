@@ -124,6 +124,28 @@ say "resogl -- the real plugin, headless CGL, 16:9, and the Aspect picker"
 "$BUILD/resogl" --iwad "$IWAD" --check 2>/dev/null | grep -E "  (ok|FAIL)  |checks,"
 "$BUILD/resogl" --iwad "$IWAD" --check > /dev/null 2>&1 || exit 1
 
+say "resogl -- the filming mode writes whole frames and notices a reader that leaves"
+# The fleet's --pipe contract: raw RGBA, one whole frame per tick, and exit 1
+# when the reader hangs up short of --frames. Siblings copied a --pipe that
+# died of SIGPIPE (141) on a closed stdout; every harness is tested for it.
+BYTES=$( "$BUILD/resogl" --iwad "$IWAD" --pipe --size 64x36 --fps 30 --frames 3 2>/dev/null | wc -c | tr -d ' ' )
+if [ "$BYTES" -ne 27648 ]; then
+    echo "FAIL: --pipe wrote $BYTES bytes, expected 27648 (three 64x36 RGBA frames)"
+    exit 1
+fi
+echo "ok (three whole 64x36 frames)"
+# Not `set -o pipefail`: head's early exit is the point, and the status wanted
+# is resogl's own, which a pipeline otherwise hides -- so it goes to a file.
+# (`set -e` reaches into the subshell, so the failing status is caught inline.)
+( "$BUILD/resogl" --iwad "$IWAD" --pipe --size 64x36 --fps 30 --frames 3 2>/dev/null \
+    && echo 0 > "$BUILD/pipe-rc" || echo $? > "$BUILD/pipe-rc" ) | head -c 1 > /dev/null
+PIPE_RC=$( cat "$BUILD/pipe-rc" )
+if [ "$PIPE_RC" != 1 ]; then
+    echo "FAIL: --pipe exited $PIPE_RC when the reader hung up; expected 1 (not 141, SIGPIPE)"
+    exit 1
+fi
+echo "ok (exit 1 when the reader hangs up)"
+
 say "resogl -- the other letterbox branch, 1:1"
 # Not redundant. A sign error in the Fit branch is invisible whenever the
 # picture happens to be wider than the frame, and a square render is the

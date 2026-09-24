@@ -42,6 +42,9 @@ anything about what may be shipped. **No WAD is ever committed here.**
   another: `--engine build/libresodoom_engine_426.dylib --expect-width 426`
 - The real plugin in a real GL context: `./build/resogl --iwad W.wad --check`
 - The other letterbox branch: `./build/resogl --iwad W.wad --check --size 720x720`
+- Filming (the fleet's `--pipe` contract, raw RGBA on stdout from a cue sheet by
+  parameter name, paced on the wall clock because the game is):
+  `./build/resogl --iwad W.wad --pipe --size 1920x1080 --fps 30 --frames 900 --script cues.txt`
 - A frame as a PPM: `./build/resotest --iwad W.wad --tics 500 --out /tmp/f.ppm`
 - A PPM per frame: `./build/resotest --iwad W.wad --tics 400 --seq /tmp/f_`
 - Straight into a level: `./build/resotest --iwad W.wad --warp 1 3 --skill 4`
