@@ -27,6 +27,17 @@ what you want from a layer nobody is holding a controller for.
 > [Freedoom](https://freedoom.github.io/) is free, complete, BSD-licensed and
 > what this was developed against.
 
+[![Resodoom — Doom as a live Resolume source, in true widescreen](docs/video-thumb.png)](https://www.youtube.com/watch?v=IJuWxED2su8)
+
+*[Watch it](https://www.youtube.com/watch?v=IJuWxED2su8) — 65 seconds:
+the title page and an attract demo, a warp into the first level with the
+controls keyframed, Aspect stepping through 4:3, 21:9 and 16:9, Scaling
+Integer, Pixel Aspect off and Smoothing on, Speed and Run, two layers as two
+games, and Doom's own menu and automap. Every frame is the real plugin's
+output: an FFGL source has no window, so the footage is rendered by this
+repository's own harness (`resogl --pipe`, driven by a cue sheet), and the
+game data is Freedoom, so nothing of id Software's appears.*
+
 ---
 
 <!-- downloads:start -->
