@@ -8,15 +8,16 @@ Cross-cutting notes that are not specific to this repo live in
 [fleet-notes](https://github.com/stoatworks-labs/fleet-notes).
 
 *resodoom — Doom as an FFGL source for Resolume. Built 2026-09-21. Released:
-v0.2.2 for macOS and Windows. Run in Resolume Arena on a Mac; on Windows only
+v0.2.3 for macOS and Windows. Run in Resolume Arena on a Mac; on Windows only
 in a VM with no GPU. Linux never built.*
 
 ## Status, 2026-10-04
 
-Public at `stoatworks-labs/resodoom`. **v0.2.2 is released** (2026-09-23):
+Public at `stoatworks-labs/resodoom`. **v0.2.3 is released** (2026-10-04):
 macOS universal (Apple Silicon + Intel), signed and notarised, and Windows x64,
-unsigned, the first release with a Windows build. The Linux branch has never
-been built.
+unsigned. Its only change is that the About panel states the licence as
+GPL-2.0-only. v0.2.2 (2026-09-23) was the first release with a Windows build.
+The Linux branch has never been built.
 
 **Run in Resolume Arena 7.27.1 on an Apple Silicon Mac**, 2026-09-23, the
 0.2.0 bundle: the inspector, the controls and Aspect behave as documented, and three layers run
