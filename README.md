@@ -44,14 +44,14 @@ game data is Freedoom, so nothing of id Software's appears.*
 
 ## Download
 
-**[v0.2.2](https://github.com/stoatworks-labs/resodoom/releases/tag/v0.2.2)** — prebuilt for macOS and Windows. Pick your platform:
+**[v0.2.3](https://github.com/stoatworks-labs/resodoom/releases/tag/v0.2.3)** — prebuilt for macOS and Windows. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image | [`resodoom-0.2.2-macos-universal.dmg`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.2.2/resodoom-0.2.2-macos-universal.dmg) | 2.4 MB |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`resodoom-0.2.3-macos-universal.dmg`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.2.3/resodoom-0.2.3-macos-universal.dmg) | 2.4 MB |
 | Universal (Apple Silicon + Intel) · .zip archive | [`resodoom-macos-universal.zip`](https://github.com/stoatworks-labs/resodoom/releases/latest/download/resodoom-macos-universal.zip) | 2.2 MB |
 
 </details>
@@ -61,8 +61,8 @@ game data is Freedoom, so nothing of id Software's appears.*
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .exe installer | [`resodoom-0.2.2-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.2.2/resodoom-0.2.2-windows-x86_64-setup.exe) | 495 KB |
-| x64 · .zip archive | [`resodoom-windows-x86_64.zip`](https://github.com/stoatworks-labs/resodoom/releases/latest/download/resodoom-windows-x86_64.zip) | 935 KB |
+| x64 · .exe installer | [`resodoom-0.2.3-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/resodoom/releases/download/v0.2.3/resodoom-0.2.3-windows-x86_64-setup.exe) | 496 KB |
+| x64 · .zip archive | [`resodoom-windows-x86_64.zip`](https://github.com/stoatworks-labs/resodoom/releases/latest/download/resodoom-windows-x86_64.zip) | 936 KB |
 
 </details>
 
