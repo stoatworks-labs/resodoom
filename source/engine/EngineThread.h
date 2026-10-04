@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
 	EngineThread.h -- the five threading primitives the engine actually uses,
 	over pthreads or Win32.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
 	ResodoomHooks.h -- force-included (-include) into every doomgeneric .c file.
 

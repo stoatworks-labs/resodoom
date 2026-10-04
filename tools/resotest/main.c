@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
 	resotest -- the engine, on the CPU, with no graphics API anywhere.
 

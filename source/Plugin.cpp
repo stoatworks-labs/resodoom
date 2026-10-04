@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 #include "Plugin.h"
 
 #include <stagehand/Diag.h>
@@ -186,7 +187,7 @@ ResodoomPlugin::ResodoomPlugin()
 		SetParamInfo is protected on CFFGLPlugin and nothing outside the class
 		can call it.
 
-		The licence shown here is GPL-2.0, which is not what the rest of the
+		The licence shown here is GPL-2.0-only, which is not what the rest of the
 		fleet says -- see AGENTS.md. It comes from the website's data through
 		StoatworksAbout.h, so it cannot drift from the repo's actual licence
 		without somebody changing the one place it is written down.

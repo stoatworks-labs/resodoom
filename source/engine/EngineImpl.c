@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
 	EngineImpl.c -- doomgeneric's platform layer, plus the C ABI the plugin
 	calls. This file IS the engine shared library, together with the upstream

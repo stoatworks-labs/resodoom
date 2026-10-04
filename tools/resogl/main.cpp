@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
 	resogl -- the real plugin class, through the real FFGL sequence, in a
 	headless 4.1 core-profile context.

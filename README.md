@@ -173,7 +173,7 @@ This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTI
 
 ## Licence
 
-> ### This repo is GPL-2.0, not MIT.
+> ### This repo is GPL-2.0-only, not MIT.
 >
 > Every other Stoatworks plugin is MIT. This one is not, and it cannot be: it
 > ships [doomgeneric](https://github.com/ozkl/doomgeneric), which descends from
@@ -184,7 +184,10 @@ This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTI
 > [stagehand](https://github.com/stoatworks-labs/stagehand) instead** — the MIT
 > half, split out for exactly this reason.
 
-See [LICENSE](LICENSE) for the full text.
+See [LICENSE](LICENSE) for the full text. **Version 2 only:** nothing in this
+repo grants "or any later version". Most of the doomgeneric engine code is itself
+offered under GPL-2.0-or-later, and those files keep that grant. The code
+written for resodoom, and the binaries it releases, are offered under version 2.
 
 doomgeneric is a pristine submodule: everything this project changes about it
 is done by force-including one header, so the submodule's `git diff` stays
@@ -206,7 +209,7 @@ That split is real rather than cosmetic: this repo consumes stagehand as a
 submodule and the engine here implements stagehand's generic source ABI, so
 the boundary is compiled and tested rather than asserted. MIT code may be
 linked into a GPL work, which is this direction; the combined binary released
-here is GPL-2.0, and stagehand's files stay MIT and reusable anywhere.
+here is GPL-2.0-only, and stagehand's files stay MIT and reusable anywhere.
 
 What is **not** in stagehand, deliberately: `source/engine/EngineImpl.c`, the
 platform layer that implements doomgeneric's callbacks. We wrote it, but it is

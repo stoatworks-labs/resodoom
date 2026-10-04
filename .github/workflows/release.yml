@@ -189,7 +189,7 @@ jobs:
             fi
           fi
 
-          # GPL-2.0, and the licence has to travel with the binary.
+          # GPL-2.0-only, and the licence has to travel with the binary.
           cp LICENSE out/LICENSE
           cp README.md out/ 2>/dev/null || true
           cp docs/USER-GUIDE.md out/ 2>/dev/null || true

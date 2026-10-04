@@ -11,7 +11,7 @@ from a layer nobody is holding a controller for.
 > would with any other source port. [Freedoom](https://freedoom.github.io/) is free, complete and
 > what this was developed against.
 
-> **This plugin is GPL-2.0, not MIT like the rest of the Stoatworks plugins.** It ships an engine
+> **This plugin is GPL-2.0-only, not MIT like the rest of the Stoatworks plugins.** It ships an engine
 > descended from id Software's own release of the Doom source, and anything linked into that
 > binary inherits its licence. If you are here to reuse code rather than to use the plugin, the
 > parts that are not about Doom live in [stagehand](https://github.com/stoatworks-labs/stagehand),
@@ -205,7 +205,8 @@ The common causes, in order:
 
 ## Licensing
 
-This plugin is **GPL-2.0**. The source is at
+This plugin is **GPL-2.0-only**: version 2 of the GPL, without the "or any later version"
+option. The source is at
 [github.com/stoatworks-labs/resodoom](https://github.com/stoatworks-labs/resodoom), and the
 licence obliges us to keep it that way.
 

@@ -70,8 +70,8 @@ set( DG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/doomgeneric/doomgeneric )
 # Everything here that is not about Doom lives there: loading a private copy of
 # a source library, paying out its clock, and presenting its frames. It is a
 # separate repo because it is genuinely independent and useful without Doom,
-# and keeping it separate is what lets it stay MIT while this repo is GPL-2.0.
-# MIT links into GPL; the combined binary this repo distributes is GPL-2.0.
+# and keeping it separate is what lets it stay MIT while this repo is GPL-2.0-only.
+# MIT links into GPL; the combined binary this repo distributes is GPL-2.0-only.
 # ---------------------------------------------------------------------------
 if( NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/stagehand/CMakeLists.txt )
 	message( FATAL_ERROR

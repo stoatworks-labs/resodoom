@@ -2,7 +2,7 @@
 
 **What it is:** Doom running inside Resolume as an FFGL source. The game
 becomes a layer you can composite, key, MIDI-map and run through other effects.
-C++17 and C11, CMake, universal macOS `.bundle`. **GPL-2.0 — the one repo in
+C++17 and C11, CMake, universal macOS `.bundle`. **GPL-2.0-only — the one repo in
 the fleet that is not MIT.**
 
 **The non-Doom half lives elsewhere.**
@@ -302,9 +302,33 @@ Software's release of the Doom source, which is GPL. Anything linked into this
 binary inherits it. That is fine for a public repo and it is why this one is
 not MIT like the rest of the fleet.
 
+**Version 2 only, stated explicitly since 2026-10-04.** Until then the repo said
+"GPL-2.0" everywhere and granted "or any later version" nowhere, which under
+GPLv2 §9 already meant version 2. Saying `GPL-2.0-only` removes the guesswork.
+The upstream picture, checked at the pinned doomgeneric commit (dcb7a8d): 177 of
+its 192 C files carry the Chocolate Doom header, "either version 2 of the
+License, or (at your option) any later version", and none says version 2 only.
+The other 15, ozkl's glue (`doomgeneric.c/.h`, `dummy.c`, `config.h`, `doom.h`,
+`mus2mid.h` and the platform ports we do not build), carry no notice, only the
+repo's GPLv2 LICENSE. Those files keep their own grants. "Only" is the offer for
+what we wrote and for the binaries we release. Moving to "or later" would be
+Allan's call, and would still leave the unmarked glue's version an open question
+for its author. Where it is declared:
+- `vcpkg.json`'s `license` field. The website's `sync_licences.py` reads it into
+  `projects.json`, which feeds the project page and, through
+  `stoatworks-backend/scripts/sync-about.py`, `source/StoatworksAbout.h` (the
+  About panel). Change it here, never in the generated header.
+- An `SPDX-License-Identifier: GPL-2.0-only` line atop every C/C++ file written
+  for this repo: `source/engine/*`, `source/Plugin.cpp/.h`,
+  `source/SourcePlugin.cpp`, `source/Controls.h` and the two `tools/` test
+  harnesses. The vendored fleet files (`source/StoatworksAbout*.h`,
+  `scripts/release-lib.sh`) are copies of MIT masters in stoatworks-backend and
+  carry no tag; the patches modify upstream files that keep upstream's grant.
+- The README, `docs/USER-GUIDE.md` and the repo description on GitHub.
+
 **stagehand is MIT and stays MIT.** MIT may be linked into a GPL work, which is
 the direction used here; the combined binary released from this repo is
-GPL-2.0, and stagehand's own files keep their licence and can be reused
+GPL-2.0-only, and stagehand's own files keep their licence and can be reused
 anywhere. The reverse does not hold, so no GPL code may be moved into it.
 
 **`source/engine/EngineImpl.c` stays here, deliberately.** We wrote it and

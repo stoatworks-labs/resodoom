@@ -128,8 +128,9 @@ The fixes are worth generalising to anything added later:
 
 ## Decisions worth not relitigating
 
-- **GPL-2.0**, not the fleet's usual MIT. doomgeneric descends from id's
-  source. Nothing to argue about.
+- **GPL-2.0-only**, not the fleet's usual MIT. doomgeneric descends from id's
+  source. Nothing to argue about. "Only" because nothing here grants "or any
+  later version". See AGENTS.md → Licensing for the upstream detail.
 - **No WAD ships**, including Freedoom, which legally could. 27 MB per IWAD,
   and a link to the project beats a stale copy of it.
 - **No audio.** FFGL has no audio path. Doom is launched `-nosound -nomusic`
