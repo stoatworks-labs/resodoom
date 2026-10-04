@@ -7,8 +7,31 @@ learned — that date is usually the useful part.
 Cross-cutting notes that are not specific to this repo live in
 [fleet-notes](https://github.com/stoatworks-labs/fleet-notes).
 
-*resodoom — Doom as an FFGL source for Resolume. Built 2026-09-21. NOT RELEASED,
-not yet a fleet repo, never loaded into Resolume.*
+*resodoom — Doom as an FFGL source for Resolume. Built 2026-09-21. Released:
+v0.2.2 for macOS and Windows. Run in Resolume Arena on a Mac; on Windows only
+in a VM with no GPU. Linux never built.*
+
+## Status, 2026-10-04
+
+Public at `stoatworks-labs/resodoom`. **v0.2.2 is released** (2026-09-23):
+macOS universal (Apple Silicon + Intel), signed and notarised, and Windows x64,
+unsigned, the first release with a Windows build. The Linux branch has never
+been built.
+
+**Run in Resolume Arena 7.27.1 on an Apple Silicon Mac**, 2026-09-23, the
+0.2.0 bundle: the inspector, the controls and Aspect behave as documented, and three layers run
+three games. That run found the two controls both named "Run" (now Sprint) and
+the log catching Arena's own output, both fixed in v0.2.1. Detail in AGENTS.md
+→ Checking your work.
+
+**Windows has only run in a VM with no GPU**, on Mesa's software OpenGL
+(llvmpipe): `resotest`, `resogl`, and the fleet's Arena check in Arena 7.27.1
+(9 passed, 0 failed, 1 skipped). Not yet: a Windows PC with a real graphics
+card, Avenue on Windows, the installer on a real machine, MIDI or keyboard
+mapping on Windows. Still unconfirmed anywhere: a hardware controller mapped
+onto the twelve controls, and a real commercial IWAD.
+
+The block below is the state on the day it was built, kept as written.
 
 ## Status, 2026-09-21
 
@@ -146,7 +169,8 @@ The fixes are worth generalising to anything added later:
 
 ## Next, if this is taken further
 
-1. Load it in Resolume and check the inspector and MIDI mapping.
+1. Map a hardware controller onto the controls in Resolume. The inspector was
+   checked in Arena on 2026-09-23; MIDI mapping was not.
 2. The five fleet registration tables, a `StoatworksAbout.h` block, and a guide
    before any tag — see `fleet-first-release`.
 3. A gamepad would be a better controller than twelve MIDI-mapped booleans, and
