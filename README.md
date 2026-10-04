@@ -167,6 +167,10 @@ Three layers that fail for different reasons: the engine on the CPU
 the same again at a square aspect, because a sign error in the letterbox
 branch is invisible whenever the picture happens to be the wider one.
 
+<!-- attributions:start -->
+This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+<!-- attributions:end -->
+
 ## Licence
 
 > ### This repo is GPL-2.0, not MIT.
