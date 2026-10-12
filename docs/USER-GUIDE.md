@@ -1,30 +1,30 @@
 # resodoom user guide
 
 resodoom is **Doom as a live Resolume source**. It runs inside Arena or Avenue as an FFGL
-generator: point it at a WAD and the game becomes a layer — composite it, key it, run it through
-other effects, and MIDI-map the controls onto whatever is already on the desk.
+generator: point it at a WAD and the game becomes a layer you can composite, key, run through
+other effects, and drive by MIDI-mapping the controls onto whatever's already on the desk.
 
 With nothing mapped it plays Doom's own attract demos for ever, which is usually what you want
 from a layer nobody is holding a controller for.
 
-> **No game data is included, and none ever will be.** You supply your own WAD, exactly as you
+> **No game data is included, and none ever will be.** You supply your own WAD, just as you
 > would with any other source port. [Freedoom](https://freedoom.github.io/) is free, complete and
-> what this was developed against.
+> what I developed this against.
 
 > **This plugin is GPL-2.0-only, not MIT like the rest of the Stoatworks plugins.** It ships an engine
 > descended from id Software's own release of the Doom source, and anything linked into that
-> binary inherits its licence. If you are here to reuse code rather than to use the plugin, the
-> parts that are not about Doom live in [stagehand](https://github.com/stoatworks-labs/stagehand),
+> binary inherits its licence. If you're here to reuse code rather than to use the plugin, the
+> parts that aren't about Doom live in [stagehand](https://github.com/stoatworks-labs/stagehand),
 > which is MIT.
 
-> **Before you rely on this:** the macOS build is verified end to end **headlessly** — the engine
+> **Before you rely on this:** the macOS build is verified end to end **headlessly** (the engine
 > against a real WAD with no graphics API, and the real plugin through the real FFGL sequence in a
-> headless GL context, at two aspect ratios — and it has been **run in Resolume Arena 7.27.1 on
-> macOS**: the inspector, the controls, Aspect and Auto all behave as this guide describes. What
-> nobody has tried yet is a hardware controller mapped onto the controls. **Windows builds ship
-> from v0.2.2.** They pass the same checks and run in Arena, but so far only in a Windows virtual
-> machine with software OpenGL and no graphics card; nobody has run one on a Windows PC with a real
-> GPU yet. The **Linux branch has never been built**.
+> headless GL context, at two aspect ratios), and it's been **run in Resolume Arena 7.27.1 on
+> macOS**, where the inspector, the controls, Aspect and Auto all behave as this guide describes.
+> What nobody has tried yet is a hardware controller mapped onto the controls. **Windows builds
+> ship from v0.2.2.** They pass the same checks and run in Arena, but so far only in a Windows
+> virtual machine with software OpenGL and no graphics card; nobody has run one on a Windows PC
+> with a proper GPU yet. The **Linux branch has never been built**.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
 
@@ -44,7 +44,7 @@ downloads are signed and notarised. The Windows ones are unsigned, so SmartScree
 `resodoom_engine*.dll` files are its engines, one per aspect. It loads them from its own folder,
 and Resolume's scan skips them without complaint. From the zip, copy all five. The installer puts
 them in `C:\Program Files\Resodoom` unless you choose Resolume's Extra Effects folder on its folder
-page. That is the easier route. If you keep the default, add that folder to Resolume's plugin
+page, which is the easier route. If you keep the default, add that folder to Resolume's plugin
 folders in its preferences.
 
 ## Getting a WAD
@@ -56,17 +56,17 @@ loads whatever you point it at.
   the two phases are two full games. Download it, unzip it, and you have `freedoom1.wad` and
   `freedoom2.wad`.
 - **The shareware `doom1.wad`** is the original first episode and may be redistributed intact.
-- **A commercial IWAD** you own — `doom.wad`, `doom2.wad`, `tnt.wad`, `plutonia.wad` — works, and
+- **A commercial IWAD** you own (`doom.wad`, `doom2.wad`, `tnt.wad`, `plutonia.wad`) works, and
   stays yours.
 
-Put it anywhere you like. The plugin gives you a real file picker.
+Put it anywhere you like. The plugin gives you a proper file picker.
 
 ## Running it
 
 1. Drop **SW Resodoom** on a layer.
 2. Set **WAD** to your `.wad` file.
 
-That is the whole setup. The game starts, and with nothing mapped it runs its attract demos.
+That's the whole setup. The game starts, and with nothing mapped it runs its attract demos.
 
 **Mod WAD** loads a PWAD on top, which is how community levels and total conversions work. Some
 need a specific IWAD; the plugin passes it straight through to the engine, so the rules are the
@@ -76,18 +76,18 @@ engine's rules.
 
 **Episode** and **Map** both default to *Title / Demos*, which boots to the title screen and its
 attract demos. Set both and the game warps straight into that level instead, which is what you
-want when you have found a map that looks good under a key.
+want when you've found a map that looks good under a key.
 
 **Skill** sets the difficulty. It only matters once something is actually playing the game: on
 Nightmare the monsters respawn, which on a layer left running is either a problem or the point.
 
 Changing any of these reloads the game from scratch, because Doom takes them on its command line
-and there is no way to warp a running engine without going through its menus. **Restart** does the
-same thing deliberately.
+and there's no way to warp a running engine without going through its menus. **Restart** does the
+same thing on purpose.
 
 ## Making it look right
 
-**Aspect** decides the shape of the game itself, and on a widescreen composition it is the setting
+**Aspect** decides the shape of the game itself, and on a widescreen composition it's the setting
 that matters most.
 
 | | |
@@ -103,12 +103,12 @@ either side, rather than stretching the 4:3 picture or cropping it. Menus, the t
 intermissions are the original artwork, centred with black either side.
 
 Doom's picture width is fixed when the engine is built, so the plugin carries one engine per aspect,
-and **changing Aspect restarts the game** — but only when it needs a different engine. Choosing
+and **changing Aspect restarts the game**, but only when it needs a different engine. Choosing
 the one already running does nothing, and nor does Resolume re-sending the value when a
 composition loads.
 
 **Auto matches the composition as it was when you added the clip.** Resolume keeps every clip at
-the size it was made at, so changing the composition's size later does not reach a clip that is
+the size it was made at, so changing the composition's size later doesn't reach a clip that's
 already there: Resolume fits the old picture into the new frame itself, cropping it by default.
 To have Auto choose again, add the clip afresh. A copy of the old one keeps the old size.
 
@@ -126,27 +126,27 @@ at 4:3, so its pixels are 1.2 times taller than they are wide. Turn it off and y
 buffer, with every face in the game noticeably squashed.
 
 **Smoothing** is off by default and should usually stay off. Linear filtering on a 320-pixel-wide
-picture blown up to a 4K output is a blurred mess, and large hard-edged pixels are the entire
-reason this content looks like itself.
+picture blown up to a 4K output is a blurred mess, and big hard-edged pixels are the whole reason
+this looks like Doom.
 
 ## Speed, pause and the clock
 
 **Speed** is exponential and centred: mid-travel is exactly 1.0x, and the bottom of the fader is a
 hard stop rather than a very slow game.
 
-**Run** off parks the game exactly where it stands, and costs nothing while it is off — the engine
-blocks rather than spinning.
+**Run** off parks the game exactly where it stands, and costs nothing while it's off, because the
+engine blocks rather than spinning.
 
 Both work because the plugin hands Doom its clock rather than letting it read a real one. A
-practical consequence: if the composition stalls or the layer is not drawn for a while, the game
-does not bank that time and then fast-forward through it. It simply missed it, which is what you
+practical consequence: if the composition stalls or the layer isn't drawn for a while, the game
+doesn't bank that time and then fast-forward through it. It just missed it, which is what you
 want in a show.
 
 ## The controls
 
-FFGL gives a plugin **no keyboard access at all**. There is no key path in the API, so the twelve
-controls are plain boolean parameters — which turns out to be the more useful shape anyway:
-Resolume MIDI-maps them, keyboard-maps them and automates them off the timeline exactly like any
+FFGL gives a plugin **no keyboard access at all**. There's no key path in the API, so the twelve
+controls are plain boolean parameters, which turns out to be the more useful shape anyway:
+Resolume MIDI-maps them, keyboard-maps them and automates them off the timeline like any
 other parameter.
 
 So a controller becomes a Doom pad with no special support, and a playthrough can be keyframed as
@@ -165,11 +165,11 @@ a visual.
 | **Automap** | Tab |
 
 **Sprint** was called **Run** in 0.2.0, the same as the switch at the top that pauses the game.
-Resolume tells parameters apart by name, so the two were one to it: a mapping could not reach
+Resolume tells parameters apart by name, so to Resolume the two were one: a mapping couldn't reach
 Sprint on its own, and a reopened composition put both saved values on the pause switch. A 0.2.0
 mapping or composition that meant Sprint needs setting again.
 
-**Menu** and **Confirm** are how you reach everything this plugin does not expose: saving,
+**Menu** and **Confirm** are how you reach everything this plugin doesn't expose: saving,
 loading, changing a weapon binding, and so on. Doom's own menus are still in there.
 
 ## Two layers, two games
@@ -179,36 +179,36 @@ rather than two views of one. Different WADs, different levels, different player
 
 ## What it deliberately does not do
 
-- **No sound.** FFGL has no audio path — a Resolume plugin returns a texture and nothing else. The
+- **No sound.** FFGL has no audio path: a Resolume plugin returns a texture and nothing else. The
   game is launched with sound and music off rather than rendering samples nobody can hear.
 - **No mouse look**, and no save-state buttons. Doom's own menus handle saving.
 - **No bundled WAD**, including Freedoom, which legally could be bundled. A link to the project
-  beats a stale copy of it, and 27 MB per IWAD inside a plugin bundle is not a kindness.
+  beats a stale copy of it, and 27 MB per IWAD inside a plugin bundle isn't doing anyone a favour.
 
 ## If the layer stays black
 
-Every interesting failure here looks the same from outside, so there is a log:
+Every interesting failure here looks the same from outside, so there's a log:
 
     macOS    ~/Library/Logs/Resodoom/resodoom.YYYY-MM-DD.log
     Windows  %LOCALAPPDATA%\Resodoom\Logs\resodoom.YYYY-MM-DD.log
 
 It carries the plugin's own account **and the engine's**, which is usually the one that names the
-real problem — a line like `IWAD file '...' not found!` comes straight from Doom.
+actual problem: a line like `IWAD file '...' not found!` comes straight from Doom.
 
 The common causes, in order:
 
-1. **No WAD selected**, or the file moved since the composition was saved.
-2. **The WAD is not one Doom accepts.** A PWAD selected as the main **WAD** will not work; it goes
+1. **No WAD selected**, or the file has moved since the composition was saved.
+2. **The WAD isn't one Doom accepts.** A PWAD selected as the main **WAD** won't work; it goes
    in **Mod WAD** with a real IWAD above it.
 3. **A Mod WAD that needs a different IWAD.** The log carries the engine's complaint.
-4. **The game is paused** — check **Run**, and check **Speed** is not at the bottom of its travel.
+4. **The game is paused.** Check **Run**, and check **Speed** isn't at the bottom of its travel.
 
 ## Licensing
 
 This plugin is **GPL-2.0-only**: version 2 of the GPL, without the "or any later version"
 option. The source is at
 [github.com/stoatworks-labs/resodoom](https://github.com/stoatworks-labs/resodoom), and the
-licence obliges us to keep it that way.
+licence obliges me to keep it that way.
 
 DOOM is a trademark of id Software LLC. This is an unaffiliated front end for a free source port
 and ships no id Software content. What you play, you supply.

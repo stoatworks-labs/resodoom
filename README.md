@@ -4,39 +4,39 @@
 > (Anthropic), directed and reviewed by a human author. The macOS build is
 > verified end to end **headlessly**: the engine against a real WAD with no
 > graphics API, and the real plugin class through the real FFGL sequence in a
-> headless GL context, at two aspect ratios — and it has been **run in
+> headless GL context, at two aspect ratios. It's also been **run in
 > Resolume Arena 7.27.1 on macOS**, where the inspector, the controls and
 > Aspect behave as documented. A hardware controller mapped onto the controls
 > is still untried. **Windows builds ship from v0.2.2.** The Windows build
 > passes the same headless checks and the fleet's Arena check, but only in a
 > Windows VM with software OpenGL (Mesa llvmpipe) and no GPU; nobody has run it
-> on a Windows PC with a real graphics card yet. The Linux branch has never been
+> on a Windows PC with a proper graphics card yet. The Linux branch has never been
 > built.
 
 **Doom as a live Resolume source.**
 
 Point it at a WAD and the game becomes a layer: composite it, key it, run it
-through other effects, and MIDI-map the controls onto whatever is already on
+through other effects, and MIDI-map the controls onto whatever's already on
 the desk.
 
 With nothing mapped it plays Doom's own attract demos forever, which is usually
 what you want from a layer nobody is holding a controller for.
 
 > **No game data is shipped with this plugin, and none ever will be.** You
-> supply your own WAD, exactly as you would with any other source port.
+> supply your own WAD, just as you would with any other source port.
 > [Freedoom](https://freedoom.github.io/) is free, complete, BSD-licensed and
-> what this was developed against.
+> what I developed this against.
 
 [![Resodoom — Doom as a live Resolume source, in true widescreen](docs/video-thumb.png)](https://www.youtube.com/watch?v=IJuWxED2su8)
 
-*[Watch it](https://www.youtube.com/watch?v=IJuWxED2su8) — 65 seconds:
+*[Watch it](https://www.youtube.com/watch?v=IJuWxED2su8) (65 seconds):
 the title page and an attract demo, a warp into the first level with the
 controls keyframed, Aspect stepping through 4:3, 21:9 and 16:9, Scaling
 Integer, Pixel Aspect off and Smoothing on, Speed and Run, two layers as two
-games, and Doom's own menu and automap. Every frame is the real plugin's
-output: an FFGL source has no window, so the footage is rendered by this
-repository's own harness (`resogl --pipe`, driven by a cue sheet), and the
-game data is Freedoom, so nothing of id Software's appears.*
+games, and Doom's own menu and automap. It's all the plugin's own output. An
+FFGL source doesn't have a window to film, so the footage comes from this
+repo's own harness (`resogl --pipe`, driven by a cue sheet), and the game data
+is Freedoom, so nothing of id Software's appears.*
 
 ---
 
@@ -101,7 +101,7 @@ cmake --install build      # drops the bundle into Resolume's plugin folder
 ```
 
 `--recursive` matters: the FFGL SDK, doomgeneric and stagehand are all
-submodules, and the build stops with instructions if any is missing.
+submodules, and the build stops with instructions if any of them is missing.
 
 On Windows it builds with MSVC and takes GLEW from vcpkg (`vcpkg.json`):
 
@@ -115,7 +115,7 @@ cmake --build build --config Release
 
 ## Using it
 
-Drop `SW Resodoom` on a layer and set **WAD** to a `.wad` file. That is the
+Drop `SW Resodoom` on a layer and set **WAD** to a `.wad` file. That's the
 whole setup.
 
 | Parameter | What it does |
@@ -134,19 +134,19 @@ whole setup.
 
 The twelve **Controls** are plain boolean parameters, so Resolume MIDI-maps
 them, keyboard-maps them and automates them off the timeline like anything
-else. FFGL gives a plugin no keyboard access at all, so this is not a
-convenience — it is the only input path that exists.
+else. FFGL gives a plugin no keyboard access at all, so these parameters are
+the only way in.
 
 ## True widescreen
 
-On a 16:9 composition the game is really widescreen — not the 4:3 picture
-stretched, and not pillarboxed: the view is the same height and you see more to
-either side. **Aspect** chooses how wide. *Auto* (the default) picks whichever
-matches the composition, and 4:3 gives the original back.
+On a 16:9 composition the game is properly widescreen: the view is the same height
+and you see more to either side, rather than the 4:3 picture stretched or
+pillarboxed. **Aspect** chooses how wide. *Auto* (the default) picks whichever
+matches the composition, and 4:3 gives you the original back.
 
 Doom's picture width is fixed when the engine is compiled, so the plugin
 carries four engines, one per aspect, and changing Aspect restarts the game.
-Only a change that needs a different engine does: choosing the one already
+Only a change that needs a different engine does that; choosing the one already
 running does nothing. The menus, title screens and intermissions are the
 original 320-wide artwork, centred with black either side.
 
@@ -175,14 +175,14 @@ This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTI
 
 > ### This repo is GPL-2.0-only, not MIT.
 >
-> Every other Stoatworks plugin is MIT. This one is not, and it cannot be: it
+> Every other Stoatworks plugin is MIT. This one isn't, and it can't be: it
 > ships [doomgeneric](https://github.com/ozkl/doomgeneric), which descends from
-> id Software's own release of the Doom source, and that is GPL. Anything
+> id Software's own release of the Doom source, and that's GPL. Anything
 > linked into this binary inherits it.
 >
-> **If you are here to reuse code, you probably want
-> [stagehand](https://github.com/stoatworks-labs/stagehand) instead** — the MIT
-> half, split out for exactly this reason.
+> **If you're here to reuse code, you probably want
+> [stagehand](https://github.com/stoatworks-labs/stagehand) instead**: it's the MIT
+> half, split out for that reason.
 
 See [LICENSE](LICENSE) for the full text. **Version 2 only:** nothing in this
 repo grants "or any later version". Most of the doomgeneric engine code is itself
@@ -198,20 +198,20 @@ front end for a free source port, and ships no id Software content.
 
 ## The MIT half
 
-The parts of this that are not about Doom live in a separate repo,
+The parts of this that aren't about Doom live in a separate repo,
 [stagehand](https://github.com/stoatworks-labs/stagehand), under **MIT**:
 loading a private copy of a source library, paying out its clock against
 elapsed real time, and presenting its frames as a letterboxed quad. It depends
-on OpenGL and `libdl` and nothing else — not even on FFGL — and is useful
+on OpenGL and `libdl` and nothing else (not even FFGL), and it's useful
 without Doom anywhere near it.
 
-That split is real rather than cosmetic: this repo consumes stagehand as a
+The split is enforced by the build: this repo consumes stagehand as a
 submodule and the engine here implements stagehand's generic source ABI, so
 the boundary is compiled and tested rather than asserted. MIT code may be
 linked into a GPL work, which is this direction; the combined binary released
 here is GPL-2.0-only, and stagehand's files stay MIT and reusable anywhere.
 
-What is **not** in stagehand, deliberately: `source/engine/EngineImpl.c`, the
-platform layer that implements doomgeneric's callbacks. We wrote it, but it is
+What's **not** in stagehand, on purpose: `source/engine/EngineImpl.c`, the
+platform layer that implements doomgeneric's callbacks. I wrote it, but it's
 compiled into the GPL engine and is meaningless outside it, so calling it MIT
 would be a technicality rather than an honest offer.
